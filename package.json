@@ -6,26 +6,44 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest"
   },
   "dependencies": {
+    "@hookform/resolvers": "^3.9.0",
+    "focus-trap-react": "^10.3.1",
     "framer-motion": "^12.23.6",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.2",
+    "jsqr": "^1.4.0",
     "lucide-react": "^0.525.0",
     "next": "15.4.2",
+    "qrcode": "^1.5.4",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "react-hook-form": "^7.53.0",
+    "xlsx": "^0.18.5",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@playwright/test": "^1.45.0",
     "@prisma/client": "^6.12.0",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.4.2",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.5.2",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.4.2",
+    "fast-check": "^3.18.0",
+    "jsdom": "^24.0.0",
     "prisma": "^6.12.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^1.6.0"
   }
 }

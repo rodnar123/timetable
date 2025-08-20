@@ -1,359 +1,159 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Calendar, Clock, Users, BookOpen, Building, AlertCircle, Download, Upload, Menu, X, ChevronDown, Plus, Search, Filter, Grid, List, Bell, Settings, Home, BarChart3, Save, RefreshCw, User, GraduationCap, MapPin, Activity, Edit, Trash2, Eye, Check, XCircle, Database, UserPlus, BookPlus, Building2, CalendarPlus, Loader, CheckCircle, AlertTriangle, Info, School, CreditCard, FileText, Mail } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Loader, Building2, CalendarPlus, Home, Calendar, School, BookOpen, User,
+  Users, GraduationCap, Building, RefreshCw, BarChart3, Settings 
+} from 'lucide-react';
 
-// Database Types
-interface Department {
-  id: string;
-  name: string;
-  code: string;
-  head: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
 
-interface Program {
-  id: string;
-  name: string;
-  code: string;
-  departmentId: string;
-  level: 'undergraduate' | 'postgraduate';
-  duration: number; // in years
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Import types
+import { 
+  Department, Program, Course, Faculty, Room, TimeSlot, 
+  Student, Substitution, Conflict, AcademicCalendar, 
+  ModalType, AlertState, 
+  Attendance,
+  LessonType,
+  SubstitutionStatus,
+  GroupType,
+  ConflictType,
+  ConflictSeverity
+} from '@/types/database';
 
-interface Course {
-  id: string;
-  code: string;
-  name: string;
-  programId: string;
-  departmentId: string;
-  credits: number;
-  semester: number;
-  year: number;
-  description: string;
-  prerequisites: string[];
-  color: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Import services
+import { TimetableDB } from '@/services/database';
 
-interface Faculty {
-  id: string;
-  staffId: string;
-  title: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  departmentId: string;
-  specialization: string;
-  officeNumber: string;
-  officeHours: string;
-  qualifications: string[];
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Import utilities
+import { generateColor, addHours, getDayName } from '@/utils/helpers';
 
-interface Room {
-  id: string;
-  code: string;
-  name: string;
-  building: string;
-  floor: number;
-  capacity: number;
-  type: 'lecture' | 'tutorial' | 'lab' | 'computer' | 'workshop';
-  equipment: string[];
-  available: boolean;
-  features: string[];
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Import components
+import Alert from '@/components/Alert';
+import Sidebar from '@/components/Sidebar';
+import Header from '@/components/Header';
 
-interface TimeSlot {
-  id: string;
-  courseId: string;
-  facultyId: string;
-  roomId: string;
-  dayOfWeek: number; // 0-6 (Sunday-Saturday)
-  startTime: string; // HH:MM format
-  endTime: string;
-  type: 'lecture' | 'tutorial' | 'lab' | 'workshop';
-  groupId?: string; // for splitting classes into groups
-  academicYear: string;
-  semester: number;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Import section components
+import Dashboard from '@/components/sections/Dashboard';
+import TimetableSection from '@/components/sections/TimetableSection';
+import Departments from '@/components/sections/Departments';
+import Programs from '@/components/sections/Programs';
+import Courses from '@/components/sections/Courses';
+import FacultySection from '@/components/sections/Faculty';
+import Rooms from '@/components/sections/Rooms';
+import Students from '@/components/sections/Students';
+import Substitutions from '@/components/sections/Substitutions';
+import AcademicCalendarSection from '@/components/sections/AcademicCalendar';
+import Analytics from '@/components/sections/Analytics';
+import SettingsSection from '@/components/sections/Settings';
+import AttendanceSection from '@/components/sections/AttendanceSection';
 
-interface Student {
-  id: string;
-  studentId: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  programId: string;
-  year: number;
-  enrolledCourses: string[]; // course IDs
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Import modal components
+import FormModal from '@/components/modals/FormModal';
+import { ConstraintManager } from '@/services/constraintManager';
+import { ConflictResolver } from '@/services/conflictResolver';
+import { EnhancedConflict, ResolutionAction, ResolutionSuggestion } from '@/types/conflicts';
 
-interface Substitution {
-  id: string;
-  originalSlotId: string;
-  substituteFactoryId?: string;
-  substituteRoomId?: string;
-  date: Date;
-  reason: string;
-  status: 'pending' | 'approved' | 'rejected';
-  approvedBy?: string;
-  notes?: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Database Integrity Checker
+class DatabaseIntegrityChecker {
+  static async checkAndFixTimeSlots(db: TimetableDB): Promise<{
+    fixed: number;
+    errors: string[];
+    report: string;
+  }> {
+    const errors: string[] = [];
+    let fixed = 0;
+    let report = '=== TimeSlot Integrity Check ===\n';
 
-interface Conflict {
-  id: string;
-  type: 'room' | 'faculty' | 'student_group';
-  description: string;
-  severity: 'high' | 'medium' | 'low';
-  affectedSlots: string[];
-  resolved: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
+    try {
+      const timeSlots = await db.getAll<TimeSlot>('timeSlots');
+      report += `Total TimeSlots found: ${timeSlots.length}\n`;
 
-interface AcademicCalendar {
-  id: string;
-  academicYear: string;
-  semester: number;
-  startDate: Date;
-  endDate: Date;
-  breakStart?: Date;
-  breakEnd?: Date;
-  examStart?: Date;
-  examEnd?: Date;
-  holidays: { date: Date; name: string }[];
-  createdAt: Date;
-  updatedAt: Date;
-}
+      for (const slot of timeSlots) {
+        const issues: string[] = [];
+        let needsUpdate = false;
+        const updates: Partial<TimeSlot> = {};
 
-// IndexedDB Database Service
-class TimetableDB {
-  private db: IDBDatabase | null = null;
-  private readonly dbName = 'PNGUnitechTimetableDB';
-  private readonly version = 1;
-
-  async init(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, this.version);
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        this.db = request.result;
-        resolve();
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-
-        // Create object stores
-        const stores = [
-          'departments', 'programs', 'courses', 'faculty', 'rooms',
-          'timeSlots', 'students', 'substitutions', 'conflicts', 'academicCalendar'
-        ];
-
-        stores.forEach(storeName => {
-          if (!db.objectStoreNames.contains(storeName)) {
-            const store = db.createObjectStore(storeName, { keyPath: 'id' });
-            store.createIndex('createdAt', 'createdAt', { unique: false });
-            store.createIndex('updatedAt', 'updatedAt', { unique: false });
-
-            // Add specific indexes
-            switch (storeName) {
-              case 'courses':
-                store.createIndex('departmentId', 'departmentId', { unique: false });
-                store.createIndex('programId', 'programId', { unique: false });
-                break;
-              case 'faculty':
-                store.createIndex('departmentId', 'departmentId', { unique: false });
-                store.createIndex('staffId', 'staffId', { unique: true });
-                break;
-              case 'timeSlots':
-                store.createIndex('courseId', 'courseId', { unique: false });
-                store.createIndex('facultyId', 'facultyId', { unique: false });
-                store.createIndex('roomId', 'roomId', { unique: false });
-                store.createIndex('dayOfWeek', 'dayOfWeek', { unique: false });
-                break;
-              case 'students':
-                store.createIndex('programId', 'programId', { unique: false });
-                store.createIndex('studentId', 'studentId', { unique: true });
-                break;
-            }
-          }
-        });
-      };
-    });
-  }
-
-  // Generic CRUD operations
-  async create<T extends { id: string; createdAt: Date; updatedAt: Date }>(
-      storeName: string,
-      data: Omit<T, 'id' | 'createdAt' | 'updatedAt'>
-  ): Promise<T> {
-    const item = {
-      ...data,
-      id: this.generateId(),
-      createdAt: new Date(),
-      updatedAt: new Date()
-    } as T;
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([storeName], 'readwrite');
-      const store = transaction.objectStore(storeName);
-      const request = store.add(item);
-
-      request.onsuccess = () => resolve(item);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async update<T extends { id: string; updatedAt: Date }>(
-      storeName: string,
-      id: string,
-      data: Partial<T>
-  ): Promise<T | null> {
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([storeName], 'readwrite');
-      const store = transaction.objectStore(storeName);
-      const getRequest = store.get(id);
-
-      getRequest.onsuccess = () => {
-        const existing = getRequest.result;
-        if (!existing) {
-          resolve(null);
-          return;
+        if (!slot.id) {
+          issues.push('Missing ID');
+          continue;
         }
 
-        const updated = {
-          ...existing,
-          ...data,
-          id,
-          updatedAt: new Date()
-        };
+        if (!slot.yearLevel && slot.yearLevel !== 0) {
+          issues.push('Missing yearLevel');
+          updates.yearLevel = 1;
+          needsUpdate = true;
+        }
 
-        const putRequest = store.put(updated);
-        putRequest.onsuccess = () => resolve(updated);
-        putRequest.onerror = () => reject(putRequest.error);
-      };
+        if (!slot.academicYear) {
+          issues.push('Missing academicYear');
+          updates.academicYear = '2025';
+          needsUpdate = true;
+        }
 
-      getRequest.onerror = () => reject(getRequest.error);
-    });
-  }
+        if (!slot.semester && slot.semester !== 0) {
+          issues.push('Missing semester');
+          updates.semester = 1;
+          needsUpdate = true;
+        }
 
-  async delete(storeName: string, id: string): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([storeName], 'readwrite');
-      const store = transaction.objectStore(storeName);
-      const request = store.delete(id);
+        if (issues.length > 0) {
+          report += `\nSlot ${slot.id}: ${issues.join(', ')}\n`;
+        }
 
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => reject(request.error);
-    });
-  }
+        if (needsUpdate) {
+          try {
+            await db.update<TimeSlot>('timeSlots', slot.id, updates);
+            fixed++;
+            report += `  ✓ Fixed\n`;
+          } catch (error) {
+            errors.push(`Failed to fix slot ${slot.id}: ${error}`);
+            report += `  ✗ Failed to fix: ${error}\n`;
+          }
+        }
+      }
 
-  async getById<T>(storeName: string, id: string): Promise<T | null> {
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([storeName], 'readonly');
-      const store = transaction.objectStore(storeName);
-      const request = store.get(id);
+      report += `\n=== Summary ===\n`;
+      report += `Total slots: ${timeSlots.length}\n`;
+      report += `Fixed: ${fixed}\n`;
+      report += `Errors: ${errors.length}\n`;
 
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async getAll<T>(storeName: string): Promise<T[]> {
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([storeName], 'readonly');
-      const store = transaction.objectStore(storeName);
-      const request = store.getAll();
-
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async query<T>(
-      storeName: string,
-      indexName: string,
-      value: any
-  ): Promise<T[]> {
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([storeName], 'readonly');
-      const store = transaction.objectStore(storeName);
-      const index = store.index(indexName);
-      const request = index.getAll(value);
-
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  private generateId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  // Export data
-  async exportData(): Promise<string> {
-    const stores = [
-      'departments', 'programs', 'courses', 'faculty', 'rooms',
-      'timeSlots', 'students', 'substitutions', 'academicCalendar'
-    ];
-
-    const data: any = {};
-
-    for (const storeName of stores) {
-      data[storeName] = await this.getAll(storeName);
+    } catch (error) {
+      errors.push(`Fatal error: ${error}`);
+      report += `\nFatal error: ${error}\n`;
     }
 
-    return JSON.stringify(data, null, 2);
+    return { fixed, errors, report };
   }
 
-  // Import data
-  async importData(jsonData: string): Promise<void> {
-    const data = JSON.parse(jsonData);
-
-    for (const [storeName, items] of Object.entries(data)) {
-      const transaction = this.db!.transaction([storeName], 'readwrite');
-      const store = transaction.objectStore(storeName);
-
-      // Clear existing data
-      await new Promise<void>((resolve, reject) => {
-        const clearRequest = store.clear();
-        clearRequest.onsuccess = () => resolve();
-        clearRequest.onerror = () => reject(clearRequest.error);
-      });
-
-      // Add imported data
-      for (const item of items as any[]) {
-        await new Promise<void>((resolve, reject) => {
-          const addRequest = store.add(item);
-          addRequest.onsuccess = () => resolve();
-          addRequest.onerror = () => reject(addRequest.error);
-        });
-      }
+  static async verifyAndRepairDatabase(db: TimetableDB): Promise<{
+    success: boolean;
+    message: string;
+    details: {
+      timeslotFix?: {
+        errors: string[];
+        fixed: number;
+        report: string;
+      };
+      error?: string;
+    };
+  }> {
+    try {
+      const timeslotFix = await this.checkAndFixTimeSlots(db);
+      
+      return {
+        success: timeslotFix.errors.length === 0,
+        message: `Database verification complete. Fixed ${timeslotFix.fixed} issues.`,
+        details: { timeslotFix }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Database verification failed: ${error}`,
+        details: { error: String(error) }
+      };
     }
   }
 }
 
-// Main Application Component
 export default function PNGUnitechTimetableSystem() {
   // State Management
   const [db, setDb] = useState<TimetableDB | null>(null);
@@ -373,6 +173,7 @@ export default function PNGUnitechTimetableSystem() {
   const [substitutions, setSubstitutions] = useState<Substitution[]>([]);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [academicCalendar, setAcademicCalendar] = useState<AcademicCalendar[]>([]);
+  const [attendance, setAttendance] = useState<Attendance[]>([]);
 
   // UI States
   const [selectedView, setSelectedView] = useState<'grid' | 'list'>('grid');
@@ -384,27 +185,47 @@ export default function PNGUnitechTimetableSystem() {
 
   // Modal States
   const [showModal, setShowModal] = useState(false);
-  const [modalType, setModalType] = useState<'department' | 'program' | 'course' | 'faculty' | 'room' | 'student' | 'timeslot' | 'substitution'>('department');
+  const [modalType, setModalType] = useState<ModalType>('department');
   const [editingItem, setEditingItem] = useState<any>(null);
 
   // Form States
   const [formData, setFormData] = useState<any>({});
 
   // Toast/Alert State
-  const [alert, setAlert] = useState<{
-    show: boolean;
-    type: 'success' | 'error' | 'warning' | 'info';
-    message: string;
-  }>({ show: false, type: 'success', message: '' });
+  const [alert, setAlert] = useState<AlertState>({ show: false, type: 'success', message: '' });
+
+  // Conflict Resolution States
+  const [constraintManager] = useState(() => new ConstraintManager());
+  const [conflictResolver] = useState(() => new ConflictResolver(constraintManager));
+  const [isAutoResolving, setIsAutoResolving] = useState(false);
+
+  // Current user for attendance
+  const currentUser = { id: 'admin', role: 'admin' as const };
 
   // Initialize Database
   useEffect(() => {
     const initDB = async () => {
       try {
+        console.log('Initializing database...');
         const database = new TimetableDB();
         await database.init();
         setDb(database);
+        
+        console.log('Database initialized, loading data...');
         await loadAllData(database);
+        
+        // Check if timeslots were loaded properly
+        const slots = await database.getAll<TimeSlot>('timeSlots');
+        console.log('TimeSlots after initial load:', slots.length);
+        
+        // Run integrity check on first load
+        const integrity = await database.verifyIntegrity();
+        if (!integrity.isValid) {
+          console.warn('Database integrity issues detected:', integrity.issues);
+          showAlert('warning', 'Database integrity issues detected. Run diagnostics from Settings.');
+        }
+        
+        console.log('Data loaded successfully');
         setLoading(false);
       } catch (error) {
         console.error('Failed to initialize database:', error);
@@ -416,11 +237,13 @@ export default function PNGUnitechTimetableSystem() {
     initDB();
   }, []);
 
-  // Load all data from database
-  const loadAllData = async (database: TimetableDB) => {
+  // Load all data (memoized)
+  const loadAllData = useCallback(async (database: TimetableDB) => {
     try {
+      console.log('Loading all data from database...');
+      
       const [
-        depts, progs, crses, fac, rms, slots, stds, subs, conf, cal
+        depts, progs, crses, fac, rms, slots, stds, subs, conf, cal, att
       ] = await Promise.all([
         database.getAll<Department>('departments'),
         database.getAll<Program>('programs'),
@@ -431,9 +254,12 @@ export default function PNGUnitechTimetableSystem() {
         database.getAll<Student>('students'),
         database.getAll<Substitution>('substitutions'),
         database.getAll<Conflict>('conflicts'),
-        database.getAll<AcademicCalendar>('academicCalendar')
+        database.getAll<AcademicCalendar>('academicCalendar'),
+        database.getAll<Attendance>('attendance').catch(() => [])
       ]);
 
+      console.log('Loaded timeSlots:', slots.length);
+      
       setDepartments(depts);
       setPrograms(progs);
       setCourses(crses);
@@ -444,11 +270,12 @@ export default function PNGUnitechTimetableSystem() {
       setSubstitutions(subs);
       setConflicts(conf);
       setAcademicCalendar(cal);
+      setAttendance(att);
     } catch (error) {
       console.error('Failed to load data:', error);
       showAlert('error', 'Failed to load data');
     }
-  };
+  }, []); // data reload invoked explicitly; safe with empty deps
 
   // Alert Helper
   const showAlert = (type: 'success' | 'error' | 'warning' | 'info', message: string) => {
@@ -457,7 +284,7 @@ export default function PNGUnitechTimetableSystem() {
   };
 
   // Modal Handlers
-  const openModal = (type: typeof modalType, item?: any) => {
+  const openModal = (type: ModalType, item?: Department | Program | Course | Faculty | Room | TimeSlot | Student | Substitution | null) => {
     setModalType(type);
     setEditingItem(item || null);
     setFormData(item || {});
@@ -470,59 +297,222 @@ export default function PNGUnitechTimetableSystem() {
     setFormData({});
   };
 
+  // Validation Helper Function
+  const validateForm = (): { isValid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    
+    switch (modalType) {
+      case 'department':
+        if (!formData.name?.trim()) errors.push('Department name is required');
+        if (!formData.code?.trim()) errors.push('Department code is required');
+        if (!formData.head?.trim()) errors.push('Department head is required');
+        break;
+        
+      case 'program':
+        if (!formData.name?.trim()) errors.push('Program name is required');
+        if (!formData.code?.trim()) errors.push('Program code is required');
+        if (!formData.departmentId) errors.push('Department is required');
+        if (!formData.level) errors.push('Level is required');
+        if (!formData.duration || formData.duration <= 0) errors.push('Duration must be greater than 0');
+        break;
+        
+      case 'course':
+        if (!formData.code?.trim()) errors.push('Course code is required');
+        if (!formData.name?.trim()) errors.push('Course name is required');
+        if (!formData.programId) errors.push('Program is required');
+        if (!formData.departmentId) errors.push('Department is required');
+        if (!formData.credits || formData.credits <= 0) errors.push('Credits must be greater than 0');
+        if (!formData.semester || formData.semester < 1 || formData.semester > 2) errors.push('Valid semester is required (1 or 2)');
+        if (!formData.yearLevel) errors.push('Year level is required');
+        break;
+        
+      case 'faculty':
+        if (!formData.title?.trim()) errors.push('Title is required');
+        if (!formData.firstName?.trim()) errors.push('First name is required');
+        if (!formData.lastName?.trim()) errors.push('Last name is required');
+        if (!formData.departmentId) errors.push('Department is required');
+        if (formData.email && !emailRegex.test(formData.email)) {
+          errors.push('Invalid email format');
+        }
+        break;
+        
+      case 'room':
+        if (!formData.code?.trim()) errors.push('Room code is required');
+        if (!formData.name?.trim()) errors.push('Room name is required');
+        if (!formData.building?.trim()) errors.push('Building is required');
+        if (!formData.capacity || formData.capacity <= 0) errors.push('Capacity must be greater than 0');
+        if (!formData.type) errors.push('Room type is required');
+        break;
+        
+      case 'student':
+        if (!formData.studentId?.trim()) errors.push('Student ID is required');
+        if (!formData.firstName?.trim()) errors.push('First name is required');
+        if (!formData.lastName?.trim()) errors.push('Last name is required');
+        if (!formData.email?.trim()) errors.push('Email is required');
+        if (!formData.phone?.trim()) errors.push('Phone number is required');
+        if (!formData.programId) errors.push('Program is required');
+        if (!formData.enrolledCourses) errors.push('At least one course must be selected');
+        if (!formData.currentYear && !formData.year) errors.push('Year level is required');
+        if (!formData.currentSemester && !formData.semester) errors.push('Semester is required');
+        if (formData.email && !emailRegex.test(formData.email)) {
+          errors.push('Invalid email format');
+        }
+        break;
+        
+      case 'timeslot':
+        if (!formData.courseId) errors.push('Course is required');
+        if (!formData.facultyId) errors.push('Faculty is required');
+        if (!formData.roomId) errors.push('Room is required');
+        if (formData.dayOfWeek === undefined || formData.dayOfWeek < 1 || formData.dayOfWeek > 5) {
+          errors.push('Valid day of week is required (Monday-Friday)');
+        }
+        if (!formData.startTime) errors.push('Start time is required');
+        if (!formData.endTime) errors.push('End time is required');
+        if (!formData.type) errors.push('Type is required');
+        
+        // Validate time logic
+        if (formData.startTime && formData.endTime) {
+          const start = new Date(`2000-01-01T${formData.startTime}`).getTime();
+          const end = new Date(`2000-01-01T${formData.endTime}`).getTime();
+          if (end <= start) {
+            errors.push('End time must be after start time');
+          }
+        }
+        break;
+    }
+    
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  };
+
   // CRUD Handlers
   const handleCreate = async () => {
     if (!db) return;
 
+    // Validate form
+    const validation = validateForm();
+    if (!validation.isValid) {
+      const errorMessage = validation.errors.join(', ');
+      showAlert('error', errorMessage);
+      return;
+    }
+
     try {
+      // Clean the formData to remove functions and other non-serializable data
+      const cleanFormData = { ...formData };
+      
+      // Remove functions and modal-specific properties
+      delete cleanFormData.getFilteredCourses;
+      delete cleanFormData.getFilteredFaculty;
+      delete cleanFormData.departments;
+      delete cleanFormData.courses;
+      delete cleanFormData.faculty;
+      delete cleanFormData.rooms;
+      // Remove id for create (it will be auto-generated)
+      delete cleanFormData.id;
+
       let result;
       switch (modalType) {
         case 'department':
-          result = await db.create<Department>('departments', formData);
+          result = await db.create<Department>('departments', cleanFormData);
           setDepartments([...departments, result]);
           break;
         case 'program':
-          result = await db.create<Program>('programs', formData);
+          result = await db.create<Program>('programs', cleanFormData);
           setPrograms([...programs, result]);
           break;
-        case 'course':
-          result = await db.create<Course>('courses', {
-            ...formData,
-            prerequisites: formData.prerequisites || [],
-            color: formData.color || generateColor()
-          });
-          setCourses([...courses, result]);
-          break;
+       
+// Updated COURSE case:
+case 'course':
+  // Ensure we use yearLevel instead of year AND convert to numbers
+  const courseData = {
+    ...cleanFormData,
+    yearLevel: cleanFormData.yearLevel !== undefined
+      ? Number(cleanFormData.yearLevel)
+      : (cleanFormData.year !== undefined ? Number(cleanFormData.year) : 1),
+    semester: cleanFormData.semester !== undefined
+      ? Number(cleanFormData.semester)
+      : 1, // Default to 1, never null/undefined
+    credits: cleanFormData.credits !== undefined
+      ? Number(cleanFormData.credits)
+      : 3, // Default credits
+    prerequisites: cleanFormData.prerequisites || [],
+    color: cleanFormData.color || generateColor(),
+    isCore: cleanFormData.isCore === true // Ensure boolean
+  };
+  delete courseData.year;
+  result = await db.create<Course>('courses', courseData);
+  setCourses([...courses, result]);
+  break;
         case 'faculty':
           result = await db.create<Faculty>('faculty', {
-            ...formData,
-            qualifications: formData.qualifications || []
+            ...cleanFormData,
+            qualifications: cleanFormData.qualifications || []
           });
           setFaculty([...faculty, result]);
           break;
         case 'room':
           result = await db.create<Room>('rooms', {
-            ...formData,
-            equipment: formData.equipment || [],
-            features: formData.features || [],
-            available: formData.available !== false
+            ...cleanFormData,
+            equipment: cleanFormData.equipment || [],
+            features: cleanFormData.features || [],
+            available: cleanFormData.available !== false,
+            type: cleanFormData.type ? 
+              cleanFormData.type.charAt(0).toUpperCase() + cleanFormData.type.slice(1).toLowerCase() as Room['type'] : 
+              'Lecture'
           });
           setRooms([...rooms, result]);
           break;
-        case 'student':
-          result = await db.create<Student>('students', {
-            ...formData,
-            enrolledCourses: formData.enrolledCourses || []
-          });
-          setStudents([...students, result]);
-          break;
+       // Updated STUDENT case:
+case 'student':
+  // Ensure we use currentYear AND convert to numbers
+  const studentData = {
+    ...cleanFormData,
+    currentYear: cleanFormData.currentYear !== undefined
+      ? Number(cleanFormData.currentYear)
+      : (cleanFormData.year !== undefined ? Number(cleanFormData.year) : 1),
+    currentSemester: cleanFormData.currentSemester !== undefined
+      ? Number(cleanFormData.currentSemester)
+      : (cleanFormData.semester !== undefined ? Number(cleanFormData.semester) : 1),
+    enrolledCourses: cleanFormData.enrolledCourses || cleanFormData.courseIds || [],
+    // Add any other numeric conversions
+    gpa: cleanFormData.gpa !== undefined && cleanFormData.gpa !== '' && cleanFormData.gpa !== null
+      ? parseFloat(cleanFormData.gpa.toString())
+      : null
+  };
+  delete studentData.year;
+  delete studentData.courseIds;
+  delete studentData.semester;
+  result = await db.create<Student>('students', studentData);
+  setStudents([...students, result]);
+  break;
         case 'timeslot':
-          result = await db.create<TimeSlot>('timeSlots', {
-            ...formData,
-            isActive: true
-          });
-          setTimeSlots([...timeSlots, result]);
-          await checkConflicts();
+          const timeSlotData: Omit<TimeSlot, 'id' | 'createdAt' | 'updatedAt'> = {
+            courseId: cleanFormData.courseId,
+            facultyId: cleanFormData.facultyId,
+            roomId: cleanFormData.roomId,
+            departmentId: cleanFormData.departmentId || '',
+            dayOfWeek: Number(cleanFormData.dayOfWeek) || 1,
+            startTime: cleanFormData.startTime,
+            endTime: cleanFormData.endTime,
+            yearLevel: Number(cleanFormData.yearLevel) || 1,
+            academicYear: cleanFormData.academicYear || selectedYear,
+            semester: Number(cleanFormData.semester) || selectedSemester,
+            groupId: cleanFormData.groupId,
+            groupType: cleanFormData.groupType || GroupType.Regular,
+            groupName: cleanFormData.groupName,
+            maxStudents: cleanFormData.maxStudents,
+            isActive: true,
+            type: cleanFormData.type || LessonType.Lecture
+          };
+          const created = await db.create<TimeSlot>('timeSlots', timeSlotData);
+          const updatedSlots = [...timeSlots, created];
+          setTimeSlots(updatedSlots);
+          // Pass fresh list to conflict checker to avoid stale closure
+          await checkConflicts(updatedSlots);
           break;
       }
 
@@ -530,60 +520,478 @@ export default function PNGUnitechTimetableSystem() {
       closeModal();
     } catch (error) {
       console.error('Failed to create:', error);
-      showAlert('error', `Failed to create ${modalType}`);
+      showAlert('error', `Failed to create ${modalType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
   const handleUpdate = async () => {
-    if (!db || !editingItem) return;
+    if (!db) {
+      showAlert('error', 'Database not available');
+      return;
+    }
+    
+    // Special handling for joint sessions which may not have a direct editingItem.id
+    if (modalType === 'jointSession') {
+      try {
+        // Validate required fields
+        if (!formData.groupId) {
+          showAlert('error', 'Missing groupId for joint session update');
+          return;
+        }
+        
+        if (!formData.courses || formData.courses.length === 0) {
+          showAlert('error', 'Please select at least one course for the joint session');
+          return;
+        }
+        
+        if (!formData.facultyId || !formData.roomId || !formData.startTime || !formData.endTime) {
+          showAlert('error', 'Please complete all required fields');
+          return;
+        }
+        
+        // Ensure dayOfWeek is a number
+        const dayOfWeek = parseInt(formData.dayOfWeek?.toString() || "1");
+        if (isNaN(dayOfWeek)) {
+          showAlert('error', 'Invalid day of week');
+          return;
+        }
+        
+        // Find all existing sessions with this group ID
+        const existingJointSlots = timeSlots.filter(
+          slot => slot.groupId === formData.groupId
+        );
+        
+        console.log(`Found ${existingJointSlots.length} existing slots for group ${formData.groupId}`);
+        
+        // Delete sessions that are no longer part of the joint session
+        const coursesToKeep = new Set(formData.courses);
+        for (const slot of existingJointSlots) {
+          if (!coursesToKeep.has(slot.courseId)) {
+            await db.delete('timeSlots', slot.id);
+          }
+        }
+        
+        // Update existing slots and create new ones as needed
+        const updatedSessions: TimeSlot[] = [];
+        
+        // Validate course compatibility before creating slots
+        const coursesToProcess = formData.courses.map((courseId: string) => courses.find(c => c.id === courseId)).filter(Boolean);
+        if (coursesToProcess.length === 0) {
+          showAlert('error', 'No valid courses found for joint session');
+          return;
+        }
+        
+        // Check year level consistency
+        const yearLevels = new Set(coursesToProcess.map((c: Course) => c.yearLevel));
+        if (yearLevels.size > 1) {
+          showAlert('error', `All courses in a joint session must be for the same year level. Found year levels: ${Array.from(yearLevels).join(', ')}`);
+          return;
+        }
+        
+        const targetYearLevel = coursesToProcess[0].yearLevel;
+        
+        for (const courseId of formData.courses) {
+          const existingSlot = existingJointSlots.find(s => s.courseId === courseId);
+          const course = courses.find(c => c.id === courseId);
+          
+          if (!course) {
+            console.warn(`Course not found: ${courseId}`);
+            continue;
+          }
+          
+          if (existingSlot) {
+            // Update existing slot
+            const updated = await db.update<TimeSlot>('timeSlots', existingSlot.id, {
+              facultyId: formData.facultyId,
+              roomId: formData.roomId,
+              dayOfWeek: dayOfWeek,
+              startTime: formData.startTime,
+              endTime: formData.endTime,
+              type: formData.type || existingSlot.type,
+              updatedAt: new Date()
+            });
+            
+            if (updated) {
+              updatedSessions.push(updated);
+            }
+          } else {
+            // Create new slot for this course
+            const newJointSlot = await db.create<TimeSlot>('timeSlots', {
+              courseId: courseId,
+              facultyId: formData.facultyId,
+              roomId: formData.roomId,
+              departmentId: course?.departmentId || departments[0].id,
+              dayOfWeek: dayOfWeek,
+              startTime: formData.startTime,
+              endTime: formData.endTime,
+              type: formData.type || 'Lecture',
+              yearLevel: course?.yearLevel || 1,
+              groupId: formData.groupId,
+              groupType: GroupType.Joint,
+              academicYear: formData.academicYear || selectedYear,
+              semester: parseInt(formData.semester?.toString()) || selectedSemester,
+              isActive: true
+            });
+            
+            updatedSessions.push(newJointSlot);
+          }
+        }
+        
+        // Update the timeSlots state with the modified slots
+        setTimeSlots(prev => {
+          // Remove existing joint slots with this group ID
+          const remaining = prev.filter(slot => 
+            !(slot.groupId === formData.groupId)
+          );
+          // Add the updated slots
+          return [...remaining, ...updatedSessions];
+        });
+        
+        showAlert('success', 'Joint session updated successfully');
+        closeModal();
+        await checkConflicts();
+        return;
+      } catch (error) {
+        console.error('Failed to update joint session:', error);
+        showAlert('error', `Failed to update joint session: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        return;
+      }
+    }
+    
+    // Add special handling for classSplit modalType
+    if (modalType === 'classSplit') {
+      try {
+        // Validate required fields
+        if (!formData.groupId) {
+          showAlert('error', 'Missing groupId for split class update');
+          return;
+        }
+        
+        if (!formData.courseId) {
+          showAlert('error', 'Missing courseId for split class');
+          return;
+        }
+        
+        if (!formData.groups || formData.groups.length < 2) {
+          showAlert('error', 'Split class needs at least 2 groups');
+          return;
+        }
+        
+        // Find all existing time slots with this group ID
+        const existingSplitSlots = timeSlots.filter(
+          slot => slot.groupId === formData.groupId && slot.groupType === GroupType.Split
+        );
+        
+        console.log(`Found ${existingSplitSlots.length} existing slots for split group ${formData.groupId}`);
+        
+        // Delete all existing slots for this split group - we'll recreate them
+        for (const slot of existingSplitSlots) {
+          await db.delete('timeSlots', slot.id);
+        }
+        
+        // Create new time slots for each group
+        const updatedSplitSessions: TimeSlot[] = [];
+        
+        for (const group of formData.groups) {
+          if (!group.roomId) {
+            showAlert('error', `Group ${group.name} is missing a room assignment`);
+            continue;
+          }
+          
+          // Use group's time values if overridden, otherwise use the default class times
+          const startTime = group.overrideTime ? group.startTime : formData.startTime;
+          const endTime = group.overrideTime ? group.endTime : formData.endTime;
+          const dayOfWeek = group.overrideTime && group.dayOfWeek ? parseInt(group.dayOfWeek) : parseInt(formData.dayOfWeek);
+          
+          // Use group's faculty if specified, otherwise use the main faculty
+          const facultyId = group.facultyId || formData.facultyId;
+          
+          const newSplitSlot = await db.create<TimeSlot>('timeSlots', {
+            courseId: formData.courseId,
+            facultyId: facultyId,
+            roomId: group.roomId,
+            departmentId: formData.departmentId || '',
+            dayOfWeek: dayOfWeek,
+            startTime: startTime,
+            endTime: endTime,
+            type: formData.type || LessonType.Tutorial,
+            yearLevel: parseInt(formData.yearLevel?.toString() || "1"),
+            groupId: formData.groupId,
+            groupType: GroupType.Split,
+            groupName: group.name,
+            maxStudents: parseInt(group.maxStudents?.toString() || "30"),
+            academicYear: formData.academicYear || selectedYear,
+            semester: parseInt(formData.semester?.toString()) || selectedSemester,
+            isActive: true
+          });
+          
+          updatedSplitSessions.push(newSplitSlot);
+        }
+        
+        // Update timeSlots state
+        if (updatedSplitSessions.length > 0) {
+          setTimeSlots(prev => {
+            // Filter out existing split slots with this group ID
+            const filtered = prev.filter(slot => 
+              !(slot.groupId === formData.groupId && slot.groupType === GroupType.Split)
+            );
+            // Add the new ones
+            return [...filtered, ...updatedSplitSessions];
+          });
+          
+          await checkConflicts();
+          showAlert('success', `Class split into ${updatedSplitSessions.length} groups successfully`);
+          closeModal();
+          return;
+        } else {
+          showAlert('error', 'No time slots were created for the split groups');
+          return; // Don't close modal if nothing was created
+        }
+      } catch (error) {
+        console.error('Failed to update split class:', error);
+        showAlert('error', `Failed to update split class: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        return; // Don't close modal on error
+      }
+    }
+    
+    // Regular update logic for other entity types
+    if (!editingItem || !editingItem.id) {
+      console.error('Missing required data for update:', { db: !!db, editingItem, id: editingItem?.id });
+      showAlert('error', 'Cannot update: missing ID');
+      return;
+    }
+
+    // Validate form
+    const validation = validateForm();
+    if (!validation.isValid) {
+      const errorMessage = validation.errors.join(', ');
+      showAlert('error', errorMessage);
+      return;
+    }
 
     try {
       let result;
+      
       switch (modalType) {
         case 'department':
-          result = await db.update<Department>('departments', editingItem.id, formData);
+          const deptData = {
+            id: editingItem.id,
+            name: formData.name || editingItem.name,
+            code: formData.code || editingItem.code,
+            head: formData.head || editingItem.head,
+            createdAt: editingItem.createdAt || new Date(),
+            updatedAt: new Date()
+          };
+          result = await db.update<Department>('departments', editingItem.id, deptData);
           setDepartments(departments.map(d => d.id === editingItem.id ? result! : d));
           break;
+          
         case 'program':
-          result = await db.update<Program>('programs', editingItem.id, formData);
+          const progData = {
+            id: editingItem.id,
+            name: formData.name || editingItem.name,
+            code: formData.code || editingItem.code,
+            departmentId: formData.departmentId || editingItem.departmentId,
+            level: formData.level || editingItem.level,
+            duration: formData.duration || editingItem.duration,
+            createdAt: editingItem.createdAt || new Date(),
+            updatedAt: new Date()
+          };
+          result = await db.update<Program>('programs', editingItem.id, progData);
           setPrograms(programs.map(p => p.id === editingItem.id ? result! : p));
           break;
-        case 'course':
-          result = await db.update<Course>('courses', editingItem.id, formData);
-          setCourses(courses.map(c => c.id === editingItem.id ? result! : c));
-          break;
+          
+       // Updated COURSE UPDATE case:
+case 'course':
+  // Ensure semester is strictly 1 or 2
+  const parsedSemester = formData.semester !== undefined
+    ? Number(formData.semester)
+    : (editingItem.semester !== undefined ? Number(editingItem.semester) : 1);
+  const semester: 1 | 2 = parsedSemester === 2 ? 2 : 1;
+
+  const courseUpdateData = {
+    code: formData.code || editingItem.code,
+    name: formData.name || editingItem.name,
+    programId: formData.programId || editingItem.programId,
+    departmentId: formData.departmentId || editingItem.departmentId,
+    credits: formData.credits !== undefined
+      ? Number(formData.credits)
+      : (editingItem.credits !== undefined ? Number(editingItem.credits) : 3),
+    semester,
+    yearLevel: formData.yearLevel !== undefined
+      ? Number(formData.yearLevel)
+      : (formData.year !== undefined ? Number(formData.year)
+        : (editingItem.yearLevel !== undefined ? Number(editingItem.yearLevel)
+          : (editingItem.year !== undefined ? Number(editingItem.year) : 1))),
+    description: formData.description || editingItem.description || '',
+    prerequisites: formData.prerequisites || editingItem.prerequisites || [],
+    color: formData.color || editingItem.color || generateColor(),
+    isCore: formData.isCore !== undefined ? formData.isCore : editingItem.isCore,
+    updatedAt: new Date()
+  };
+  result = await db.update<Course>('courses', editingItem.id, courseUpdateData);
+  setCourses(courses.map(c => c.id === editingItem.id ? result! : c));
+  break;
+          
         case 'faculty':
-          result = await db.update<Faculty>('faculty', editingItem.id, formData);
+          const facultyData = {
+            id: editingItem.id,
+            staffId: formData.staffId || editingItem.staffId,
+            title: formData.title || editingItem.title,
+            firstName: formData.firstName || editingItem.firstName,
+            lastName: formData.lastName || editingItem.lastName,
+            email: formData.email || editingItem.email,
+            phone: formData.phone || editingItem.phone,
+            departmentId: formData.departmentId || editingItem.departmentId,
+            specialization: formData.specialization || editingItem.specialization || '',
+            officeNumber: formData.officeNumber || editingItem.officeNumber || '',
+            officeHours: formData.officeHours || editingItem.officeHours || '',
+            qualifications: formData.qualifications || editingItem.qualifications || [],
+            preferences: formData.preferences || editingItem.preferences,
+            createdAt: editingItem.createdAt || new Date(),
+            updatedAt: new Date()
+          };
+          result = await db.update<Faculty>('faculty', editingItem.id, facultyData);
           setFaculty(faculty.map(f => f.id === editingItem.id ? result! : f));
           break;
+          
         case 'room':
-          result = await db.update<Room>('rooms', editingItem.id, formData);
+          const roomData = {
+            id: editingItem.id,
+            code: formData.code || editingItem.code,
+            name: formData.name || editingItem.name,
+            departmentId: formData.departmentId || editingItem.departmentId,
+            building: formData.building || editingItem.building,
+            floor: formData.floor || editingItem.floor,
+            capacity: formData.capacity || editingItem.capacity,
+            type: formData.type ? 
+              (formData.type.charAt(0).toUpperCase() + formData.type.slice(1).toLowerCase() as Room['type']) : 
+              editingItem.type,
+            equipment: formData.equipment || editingItem.equipment || [],
+            available: formData.available !== undefined ? formData.available : editingItem.available,
+            features: formData.features || editingItem.features || [],
+            createdAt: editingItem.createdAt || new Date(),
+            updatedAt: new Date()
+          };
+          result = await db.update<Room>('rooms', editingItem.id, roomData);
           setRooms(rooms.map(r => r.id === editingItem.id ? result! : r));
           break;
-        case 'student':
-          result = await db.update<Student>('students', editingItem.id, formData);
-          setStudents(students.map(s => s.id === editingItem.id ? result! : s));
+          
+        // Updated STUDENT UPDATE case:
+case 'student':
+  const studentUpdateData = {
+    studentId: formData.studentId || editingItem.studentId,
+    firstName: formData.firstName || editingItem.firstName,
+    lastName: formData.lastName || editingItem.lastName,
+    middleName: formData.middleName !== undefined ? formData.middleName : editingItem.middleName,
+    email: formData.email || editingItem.email,
+    phone: formData.phone || editingItem.phone,
+    programId: formData.programId || editingItem.programId,
+    currentYear: formData.currentYear !== undefined
+      ? Number(formData.currentYear)
+      : (formData.year !== undefined ? Number(formData.year)
+        : (editingItem.currentYear !== undefined ? Number(editingItem.currentYear)
+          : (editingItem.year !== undefined ? Number(editingItem.year) : 1))),
+    currentSemester: formData.currentSemester !== undefined
+      ? Number(formData.currentSemester)
+      : (formData.semester !== undefined ? Number(formData.semester)
+        : (editingItem.currentSemester !== undefined ? Number(editingItem.currentSemester)
+          : (editingItem.semester !== undefined ? Number(editingItem.semester) : 1))),
+    dateOfBirth: formData.dateOfBirth || editingItem.dateOfBirth,
+    enrolledCourses: formData.enrolledCourses || formData.courseIds || editingItem.enrolledCourses || [],
+    completedCourses: formData.completedCourses || editingItem.completedCourses || [],
+    gpa: formData.gpa !== undefined
+      ? (formData.gpa !== '' && formData.gpa !== null ? parseFloat(formData.gpa.toString()) : null)
+      : editingItem.gpa,
+    status: formData.status || editingItem.status || 'active',
+    studentType: formData.studentType || editingItem.studentType || 'regular',
+    enrollmentDate: formData.enrollmentDate || editingItem.enrollmentDate,
+    // Additional fields
+    address: formData.address !== undefined ? formData.address : editingItem.address,
+    emergencyContactName: formData.emergencyContactName !== undefined
+      ? formData.emergencyContactName : editingItem.emergencyContactName,
+    emergencyContactPhone: formData.emergencyContactPhone !== undefined
+      ? formData.emergencyContactPhone : editingItem.emergencyContactPhone,
+    gender: formData.gender !== undefined ? formData.gender : editingItem.gender,
+    notes: formData.notes !== undefined ? formData.notes : editingItem.notes,
+    updatedAt: new Date()
+  };
+  result = await db.update<Student>('students', editingItem.id, studentUpdateData);
+  setStudents(students.map(s => s.id === editingItem.id ? result! : s));
+  break;
+          
+        case 'timeslot': {
+          const currentSlot = timeSlots.find(ts => ts.id === editingItem.id);
+          if (!currentSlot) {
+            throw new Error('Time slot not found');
+          }
+          
+          const timeSlotData: TimeSlot = {
+            id: editingItem.id,
+            courseId: formData.courseId || currentSlot.courseId,
+            facultyId: formData.facultyId || currentSlot.facultyId,
+            roomId: formData.roomId || currentSlot.roomId,
+            departmentId: formData.departmentId || currentSlot.departmentId || '',
+            dayOfWeek: formData.dayOfWeek !== undefined ? Number(formData.dayOfWeek) : currentSlot.dayOfWeek,
+            startTime: formData.startTime || currentSlot.startTime,
+            endTime: formData.endTime || currentSlot.endTime,
+            yearLevel: formData.yearLevel !== undefined ? Number(formData.yearLevel) : currentSlot.yearLevel || 1,
+            type: formData.type ? 
+              (formData.type.charAt(0).toUpperCase() + formData.type.slice(1).toLowerCase() as TimeSlot['type']) : 
+              currentSlot.type,
+            academicYear: formData.academicYear || currentSlot.academicYear || selectedYear,
+            semester: formData.semester !== undefined ? Number(formData.semester) : currentSlot.semester || selectedSemester,
+            groupId: formData.groupId || currentSlot.groupId,
+            isActive: formData.isActive !== undefined ? formData.isActive : currentSlot.isActive,
+            createdAt: currentSlot.createdAt || new Date(),
+            updatedAt: new Date()
+          };
+          
+          console.log('Updating timeslot with data:', timeSlotData);
+          result = await db.update<TimeSlot>('timeSlots', editingItem.id, timeSlotData);
+          const updatedList = timeSlots.map(t => t.id === editingItem.id ? result! : t);
+            setTimeSlots(updatedList);
+            await checkConflicts(updatedList);
           break;
-        case 'timeslot':
-          result = await db.update<TimeSlot>('timeSlots', editingItem.id, formData);
-          setTimeSlots(timeSlots.map(t => t.id === editingItem.id ? result! : t));
-          await checkConflicts();
-          break;
+        }
+          
+        default:
+          throw new Error(`Unknown modal type: ${modalType}`);
       }
 
       showAlert('success', `${modalType} updated successfully`);
       closeModal();
     } catch (error) {
       console.error('Failed to update:', error);
-      showAlert('error', `Failed to update ${modalType}`);
+      showAlert('error', `Failed to update ${modalType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
   const handleDelete = async (type: string, id: string) => {
-    if (!db || !confirm('Are you sure you want to delete this item?')) return;
+    if (!db) return;
 
     try {
-      await db.delete(type + 's', id);
+      // Map the type to the correct table name
+      const tableMap: Record<string, string> = {
+        'department': 'departments',
+        'program': 'programs',
+        'course': 'courses',
+        'faculty': 'faculty',
+        'room': 'rooms',
+        'student': 'students',
+        'timeslot': 'timeSlots',
+        'substitution': 'substitutions',
+        'conflict': 'conflicts',
+        'academicCalendar': 'academicCalendar'
+      };
+
+      const tableName = tableMap[type];
+      if (!tableName) {
+        throw new Error(`Unknown type: ${type}`);
+      }
+
+      console.log(`Deleting ${type} with id ${id} from table ${tableName}`);
+      await db.delete(tableName, id);
 
       switch (type) {
         case 'department':
@@ -604,9 +1012,14 @@ export default function PNGUnitechTimetableSystem() {
         case 'student':
           setStudents(students.filter(s => s.id !== id));
           break;
-        case 'timeslot':
-          setTimeSlots(timeSlots.filter(t => t.id !== id));
+        case 'timeslot': {
+          const remaining = timeSlots.filter(t => t.id !== id);
+          setTimeSlots(remaining);
+          setConflicts(conflicts.filter(c => !c.affectedSlots.includes(id)));
+          // Re-evaluate conflicts after removal
+          await checkConflicts(remaining);
           break;
+        }
       }
 
       showAlert('success', `${type} deleted successfully`);
@@ -616,157 +1029,414 @@ export default function PNGUnitechTimetableSystem() {
     }
   };
 
-  // Conflict Detection
-  const checkConflicts = async () => {
+  // Attendance Handlers
+  const onMarkAttendance = async (attendanceData: Partial<Attendance>[]): Promise<Attendance[] | undefined> => {
     if (!db) return;
-
-    const newConflicts: Omit<Conflict, 'id' | 'createdAt' | 'updatedAt'>[] = [];
-
-    // Check room conflicts
-    const roomGroups = timeSlots.reduce((acc, slot) => {
-      const key = `${slot.roomId}-${slot.dayOfWeek}-${slot.startTime}`;
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(slot);
-      return acc;
-    }, {} as Record<string, TimeSlot[]>);
-
-    Object.entries(roomGroups).forEach(([key, slots]) => {
-      if (slots.length > 1) {
-        newConflicts.push({
-          type: 'room',
-          description: `Room conflict: Multiple classes scheduled in the same room at the same time`,
-          severity: 'high',
-          affectedSlots: slots.map(s => s.id),
-          resolved: false
-        });
+    
+    try {
+      const createdAttendance: Attendance[] = [];
+      
+      for (const data of attendanceData) {
+        // Check if attendance already exists for this student, timeslot, and date
+        const existing = attendance.find(a => 
+          a.studentId === data.studentId && 
+          a.timeSlotId === data.timeSlotId && 
+          a.date === data.date
+        );
+        
+        if (existing) {
+          // Update existing attendance
+          const updated = await db.update<Attendance>('attendance', existing.id, {
+            ...existing,
+            ...data,
+            updatedAt: new Date()
+          });
+          if (updated) createdAttendance.push(updated);
+        } else {
+          // Create new attendance record
+          const created = await db.create<Attendance>('attendance', {
+            ...data,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          } as Omit<Attendance, 'id' | 'createdAt' | 'updatedAt'>);
+          createdAttendance.push(created);
+        }
       }
-    });
-
-    // Check faculty conflicts
-    const facultyGroups = timeSlots.reduce((acc, slot) => {
-      const key = `${slot.facultyId}-${slot.dayOfWeek}-${slot.startTime}`;
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(slot);
-      return acc;
-    }, {} as Record<string, TimeSlot[]>);
-
-    Object.entries(facultyGroups).forEach(([key, slots]) => {
-      if (slots.length > 1) {
-        newConflicts.push({
-          type: 'faculty',
-          description: `Faculty conflict: Teacher scheduled for multiple classes at the same time`,
-          severity: 'high',
-          affectedSlots: slots.map(s => s.id),
-          resolved: false
-        });
-      }
-    });
-
-    // Clear old conflicts and add new ones
-    const conflictStore = await db.getAll<Conflict>('conflicts');
-    for (const conflict of conflictStore) {
-      await db.delete('conflicts', conflict.id);
+      
+      // Reload all attendance data
+      const updatedAttendance = await db.getAll<Attendance>('attendance');
+      setAttendance(updatedAttendance);
+      
+      showAlert('success', 'Attendance marked successfully');
+      
+      // Return the created/updated attendance records
+      return createdAttendance;
+    } catch (error) {
+      console.error('Failed to mark attendance:', error);
+      showAlert('error', 'Failed to mark attendance');
+      return undefined;
     }
-
-    const createdConflicts: Conflict[] = [];
-    for (const conflictData of newConflicts) {
-      const created = await db.create<Conflict>('conflicts', conflictData);
-      createdConflicts.push(created);
-    }
-
-    setConflicts(createdConflicts);
   };
 
-  // Generate Timetable Algorithm
-  const generateTimetable = async () => {
+  const onUpdateAttendance = async (id: string, status: Attendance['status'], remarks?: string) => {
     if (!db) return;
+    
+    try {
+      const updated = await db.update<Attendance>('attendance', id, {
+        status,
+        remarks,
+        updatedAt: new Date()
+      });
+      
+      if (updated) {
+        setAttendance(prev => prev.map(a => a.id === id ? updated : a));
+        showAlert('success', 'Attendance updated successfully');
+      }
+    } catch (error) {
+      console.error('Failed to update attendance:', error);
+      showAlert('error', 'Failed to update attendance');
+    }
+  };
 
-    showAlert('info', 'Generating optimal timetable...');
+  // Migration function
+  const migrateDataStructure = async () => {
+    if (!db) return;
+    
+    try {
+      showAlert('info', 'Migrating data structure...');
+      let migrationCount = 0;
+      
+      // Migrate students - rename 'year' to 'currentYear'
+      const students = await db.getAll<any>('students');
+      for (const student of students) {
+        if (student.year !== undefined && student.currentYear === undefined) {
+          await db.update('students', student.id, {
+            ...student,
+            currentYear: student.year,
+            year: undefined
+          });
+          migrationCount++;
+        }
+      }
+      
+      // Migrate courses - ensure they use yearLevel instead of year
+      const courses = await db.getAll<any>('courses');
+      for (const course of courses) {
+        if (course.year !== undefined && course.yearLevel === undefined) {
+          await db.update('courses', course.id, {
+            ...course,
+            yearLevel: course.year,
+            year: undefined
+          });
+          migrationCount++;
+        }
+      }
+      
+      // Remove yearLevel from departments if it exists
+      const departments = await db.getAll<any>('departments');
+      for (const dept of departments) {
+        if (dept.yearLevel !== undefined) {
+          const { yearLevel, ...deptWithoutYearLevel } = dept;
+          await db.update('departments', dept.id, deptWithoutYearLevel);
+          migrationCount++;
+        }
+      }
+      
+      // Remove yearLevel from faculty if it exists
+      const facultyMembers = await db.getAll<any>('faculty');
+      for (const fac of facultyMembers) {
+        if (fac.yearLevel !== undefined) {
+          const { yearLevel, ...facWithoutYearLevel } = fac;
+          await db.update('faculty', fac.id, facWithoutYearLevel);
+          migrationCount++;
+        }
+      }
+      
+      // Remove yearLevel from programs if it exists
+      const programs = await db.getAll<any>('programs');
+      for (const prog of programs) {
+        if (prog.yearLevel !== undefined) {
+          const { yearLevel, ...progWithoutYearLevel } = prog;
+          await db.update('programs', prog.id, progWithoutYearLevel);
+          migrationCount++;
+        }
+      }
+      
+      showAlert('success', `Data migration completed! Updated ${migrationCount} records.`);
+      await loadAllData(db);
+    } catch (error) {
+      console.error('Migration failed:', error);
+      showAlert('error', 'Data migration failed');
+    }
+  };
+
+  // ===== Conflict Detection (refactored to useCallback & accept optional slots) =====
+  const checkConflicts = useCallback(async (slotsOverride?: TimeSlot[]) => {
+    if (!db) return;
+    const slotsToUse = slotsOverride || timeSlots;
 
     try {
-      // This is a simplified version. A real implementation would use
-      // genetic algorithms or constraint satisfaction algorithms
+      addDynamicConstraints();
 
-      // Clear existing time slots
-      for (const slot of timeSlots) {
-        await db.delete('timeSlots', slot.id);
+      // --- Custom conflict grouping logic for split classes ---
+      // Helper: isSplitGroup
+      const isSplitGroup = (slot: TimeSlot) =>
+        slot.groupType === GroupType.Split && !!slot.groupId;
+
+      // Room conflicts (ignore split groups with different groupIds)
+      const roomGroups = slotsToUse.reduce((acc, slot) => {
+        // For split groups, use groupId as part of the key to separate them
+        const key = isSplitGroup(slot)
+          ? `split-${slot.groupId}-${slot.roomId}-${slot.dayOfWeek}-${slot.startTime}`
+          : `${slot.roomId}-${slot.dayOfWeek}-${slot.startTime}`;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(slot);
+        return acc;
+      }, {} as Record<string, TimeSlot[]>);
+
+      // Faculty conflicts (ignore split groups with different groupIds)
+      const facultyGroups = slotsToUse.reduce((acc, slot) => {
+        const key = isSplitGroup(slot)
+          ? `split-${slot.groupId}-${slot.facultyId}-${slot.dayOfWeek}-${slot.startTime}`
+          : `${slot.facultyId}-${slot.dayOfWeek}-${slot.startTime}`;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(slot);
+        return acc;
+      }, {} as Record<string, TimeSlot[]>);
+
+      // Year-level conflicts (ignore split groups with same groupId)
+      const yearGroups = slotsToUse.reduce((acc, slot) => {
+        // For split groups, use groupId as part of the key to separate them
+        const key = isSplitGroup(slot)
+          ? `split-${slot.groupId}-${slot.yearLevel}-${slot.dayOfWeek}-${slot.startTime}`
+          : `${slot.yearLevel}-${slot.dayOfWeek}-${slot.startTime}`;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(slot);
+        return acc;
+      }, {} as Record<string, TimeSlot[]>);
+
+      const newConflicts: Omit<Conflict, 'id' | 'createdAt' | 'updatedAt'>[] = [];
+
+      // Room conflicts
+      Object.entries(roomGroups).forEach(([key, slots]) => {
+        // Only flag as conflict if more than one slot and NOT all from the same split group
+        if (slots.length > 1) {
+          // If all slots are split and share the same groupId, it's not a conflict
+          const allSplit = slots.every(isSplitGroup);
+          const allSameGroup = allSplit && slots.every(s => s.groupId === slots[0].groupId);
+          if (allSplit && allSameGroup) return; // skip, intentional split
+
+          const room = rooms.find(r => r.id === slots[0].roomId);
+          newConflicts.push({
+            description: `Room conflict: Multiple classes scheduled in the same room at the same time`,
+            details: `Room ${room?.name || slots[0].roomId} has ${slots.length} conflicting classes at ${slots[0].startTime}`,
+            affectedSlots: slots.map(s => s.id),
+            resolved: false,
+            type: ConflictType.Room,
+            severity: ConflictSeverity.High
+          });
+        }
+      });
+
+      // Faculty conflicts
+      Object.entries(facultyGroups).forEach(([key, slots]) => {
+        if (slots.length > 1) {
+          const allSplit = slots.every(isSplitGroup);
+          const allSameGroup = allSplit && slots.every(s => s.groupId === slots[0].groupId);
+          if (allSplit && allSameGroup) return; // skip, intentional split
+
+          const fac = faculty.find(f => f.id === slots[0].facultyId);
+          newConflicts.push({
+            description: `Faculty conflict: Teacher scheduled for multiple classes at the same time`,
+            details: `${fac?.firstName} ${fac?.lastName} has ${slots.length} conflicting classes at ${slots[0].startTime}`,
+            affectedSlots: slots.map(s => s.id),
+            resolved: false,
+            type: ConflictType.Faculty,
+            severity: ConflictSeverity.High
+          });
+        }
+      });
+
+      // Year-level conflicts
+      Object.entries(yearGroups).forEach(([key, slots]) => {
+        if (slots.length > 1) {
+          const allSplit = slots.every(isSplitGroup);
+          const allSameGroup = allSplit && slots.every(s => s.groupId === slots[0].groupId);
+          if (allSplit && allSameGroup) return; // skip, intentional split
+
+          newConflicts.push({
+            description: `Student group conflict: Year level has multiple classes at the same time`,
+            details: `Year ${slots[0].yearLevel} students have ${slots.length} conflicting classes at ${slots[0].startTime}`,
+            affectedSlots: slots.map(s => s.id),
+            resolved: false,
+            type: ConflictType.StudentGroup,
+            severity: ConflictSeverity.High,
+          });
+        }
+      });
+
+      // Clear & persist (could be optimized later with diffing)
+      const oldConflicts = await db.getAll<Conflict>('conflicts');
+      if (oldConflicts.length) {
+        await Promise.all(oldConflicts.map(c => db.delete('conflicts', c.id)));
       }
+      const savedConflicts: Conflict[] = [];
+      for (const conflict of newConflicts) {
+        const saved = await db.create<Conflict>('conflicts', conflict);
+        savedConflicts.push(saved);
+      }
+      setConflicts(savedConflicts);
+      showConflictSummaryAlert(analyzeConflictSummary(savedConflicts));
+    } catch (err) {
+      console.error('Conflict detection failed:', err);
+      showAlert('error', 'Failed to analyze conflicts');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, courses, faculty, rooms, students, constraintManager, conflictResolver]); 
+  // NOTE: Intentionally excluding timeSlots so we can pass explicit lists & avoid stale capture bugs.
+
+  // Add dynamic constraints based on faculty preferences
+  const addDynamicConstraints = () => {
+    constraintManager.clearDynamicConstraints();
+    
+    faculty.forEach(fac => {
+      if (fac.preferences?.noAfternoons) {
+        constraintManager.addConstraint({
+          id: `pref-${fac.id}-no-afternoon`,
+          type: 'soft',
+          category: 'preference',
+          description: `${fac.firstName} ${fac.lastName} prefers morning classes`,
+          importance: 400,
+          canRelax: true,
+          relaxationPenalty: 100
+        });
+      }
+      
+      if (fac.preferences?.maxDailyHours) {
+        constraintManager.addConstraint({
+          id: `pref-${fac.id}-max-hours`,
+          type: 'soft',
+          category: 'faculty',
+          description: `${fac.firstName} max ${fac.preferences.maxDailyHours} hours/day`,
+          importance: 600,
+          canRelax: true,
+          relaxationPenalty: 150
+        });
+      }
+    });
+  };
+
+  // Analyze conflict summary
+  const analyzeConflictSummary = (conflicts: Conflict[]) => {
+    const summary = {
+      total: conflicts.length,
+      high: conflicts.filter(c => c.severity === 'high').length,
+      medium: conflicts.filter(c => c.severity === 'medium').length,
+      low: conflicts.filter(c => c.severity === 'low').length,
+      autoResolvable: conflicts.filter(c => c.autoResolvable).length,
+      byType: {} as Record<string, number>
+    };
+    
+    conflicts.forEach(c => {
+      summary.byType[c.type] = (summary.byType[c.type] || 0) + 1;
+    });
+    
+    return summary;
+  };
+
+  // Show conflict summary alert
+  const showConflictSummaryAlert = (summary: { 
+    total: number; 
+    high: number; 
+    medium: number; 
+    low: number; 
+    autoResolvable: number; 
+    byType: Record<string, number>; 
+  }) => {
+    if (summary.total === 0) {
+      showAlert('success', '✨ Perfect! No scheduling conflicts detected.');
+      return;
+    }
+    
+    let message = `Found ${summary.total} conflicts: `;
+    
+    if (summary.high > 0) {
+      message += `${summary.high} critical`;
+    }
+    if (summary.medium > 0) {
+      message += `${summary.high > 0 ? ', ' : ''}${summary.medium} important`;
+    }
+    if (summary.low > 0) {
+      message += `${(summary.high > 0 || summary.medium > 0) ? ', ' : ''}${summary.low} minor`;
+    }
+    
+    if (summary.autoResolvable > 0) {
+      message += ` (${summary.autoResolvable} can be auto-resolved)`;
+    }
+    
+    showAlert(summary.high > 0 ? 'error' : 'warning', message);
+  };
+
+  // ===== Timetable Generation (batch & conflict-safe) =====
+  const generateTimetable = useCallback(async () => {
+    if (!db) return;
+    if (timeSlots.length > 0) {
+      const confirmClear = window.confirm(
+        `This will delete all ${timeSlots.length} existing time slots and generate new ones. Continue?`
+      );
+      if (!confirmClear) return;
+    }
+    showAlert('info', 'Generating optimal timetable...');
+    try {
+      // Clear existing
+      await Promise.all(timeSlots.map(s => db.delete('timeSlots', s.id)));
 
       const newSlots: TimeSlot[] = [];
       const availableRooms = rooms.filter(r => r.available);
-      const activeCourses = courses.filter(c =>
-          c.semester === selectedSemester &&
-          c.year.toString() === selectedYear
-      );
-
-      // Simple scheduling algorithm
-      let dayIndex = 1; // Start from Monday
+      const activeCourses = courses.filter(c => c.semester === selectedSemester);
+      let dayIndex = 1;
       let timeIndex = 0;
       const timePeriods = ['08:00', '10:00', '13:00', '15:00'];
 
       for (const course of activeCourses) {
         const courseFaculty = faculty.find(f => f.departmentId === course.departmentId);
         const suitableRoom = availableRooms.find(r =>
-            r.capacity >= 50 && // Assume minimum capacity
-            (course.name.includes('Lab') ? r.type === 'lab' : r.type === 'lecture')
+          r.capacity >= 50 &&
+          (course.name.includes('Lab') ? r.type === 'Lab' : r.type === 'Lecture')
         );
-
         if (courseFaculty && suitableRoom) {
           const slot = await db.create<TimeSlot>('timeSlots', {
             courseId: course.id,
             facultyId: courseFaculty.id,
             roomId: suitableRoom.id,
+            departmentId: course.departmentId,
             dayOfWeek: dayIndex,
             startTime: timePeriods[timeIndex],
             endTime: addHours(timePeriods[timeIndex], 2),
-            type: course.name.includes('Lab') ? 'lab' : 'lecture',
+            yearLevel: course.yearLevel || 1,
             academicYear: selectedYear,
             semester: selectedSemester,
-            isActive: true
+            isActive: true,
+            type: LessonType.Lecture
           });
-
           newSlots.push(slot);
-
-          // Move to next time slot
-          timeIndex++;
-          if (timeIndex >= timePeriods.length) {
-            timeIndex = 0;
+          timeIndex = (timeIndex + 1) % timePeriods.length;
+          if (timeIndex === 0) {
             dayIndex++;
-            if (dayIndex > 5) dayIndex = 1; // Reset to Monday after Friday
+            if (dayIndex > 5) dayIndex = 1;
           }
         }
       }
-
       setTimeSlots(newSlots);
-      await checkConflicts();
+      await checkConflicts(newSlots);
       showAlert('success', 'Timetable generated successfully!');
-    } catch (error) {
-      console.error('Failed to generate timetable:', error);
+    } catch (e) {
+      console.error('Failed to generate timetable:', e);
       showAlert('error', 'Failed to generate timetable');
     }
-  };
+  }, [db, timeSlots, rooms, courses, faculty, selectedSemester, selectedYear, checkConflicts]); 
 
-  // Helper Functions
-  const generateColor = () => {
-    const colors = [
-      'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500',
-      'bg-red-500', 'bg-indigo-500', 'bg-pink-500', 'bg-yellow-500'
-    ];
-    return colors[Math.floor(Math.random() * colors.length)];
-  };
-
-  const addHours = (time: string, hours: number): string => {
-    const [h, m] = time.split(':').map(Number);
-    const newHour = h + hours;
-    return `${newHour.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-  };
-
-  const getDayName = (dayIndex: number): string => {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    return days[dayIndex];
-  };
-
-  // Export/Import Handlers
+  // Export data
   const handleExport = async () => {
     if (!db) return;
 
@@ -786,6 +1456,7 @@ export default function PNGUnitechTimetableSystem() {
     }
   };
 
+  // Import data
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!db || !event.target.files?.[0]) return;
 
@@ -801,7 +1472,165 @@ export default function PNGUnitechTimetableSystem() {
     }
   };
 
-  // Menu Items
+  // Add handler for bulk importing students
+  const handleBulkImport = async (importedStudents: Partial<Student>[]) => {
+    if (!db) return;
+    
+    try {
+      setLoading(true);
+      showAlert('info', `Importing ${importedStudents.length} students...`);
+      
+      const results = await Promise.allSettled(
+        importedStudents.map(async (studentData) => {
+          // Prepare the student data with all required fields
+          const newStudent: Omit<Student, 'id' | 'createdAt' | 'updatedAt'> = {
+            studentId: studentData.studentId || '',
+            firstName: studentData.firstName || '',
+            lastName: studentData.lastName || '',
+            email: studentData.email || '',
+            phone: studentData.phone || '',
+            programId: studentData.programId || '',
+            currentYear: studentData.currentYear || (studentData as any).year || 1,
+            enrolledCourses: studentData.enrolledCourses || [],
+            currentSemester: studentData.currentSemester || (studentData as any).semester || 1 // was 0 (invalid)
+          };
+          
+          // Create the student in the database
+          return await db.create<Student>('students', newStudent);
+        })
+      );
+      
+      // Count successful and failed imports
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      
+      // Reload all students to update the UI
+      const updatedStudents = await db.getAll<Student>('students');
+      setStudents(updatedStudents);
+      
+      // Show appropriate alert based on results
+      if (failed === 0) {
+        showAlert('success', `Successfully imported ${successful} students`);
+      } else if (successful === 0) {
+        showAlert('error', `Failed to import all ${failed} students`);
+      } else {
+        showAlert('warning', `Imported ${successful} students successfully, ${failed} failed`);
+      }
+      
+    } catch (error) {
+      console.error('Bulk import error:', error);
+      showAlert('error', 'Failed to import students');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add handler for substitution actions
+  const handleSubstitutionAction = async (id: string, action: 'approve' | 'reject') => {
+    if (!db) return;
+    
+    // Use the correct SubstitutionStatus enum values
+    const status = action === 'approve' ? SubstitutionStatus.Approved : SubstitutionStatus.Rejected;
+    await db.update<Substitution>('substitutions', id, { status });
+    setSubstitutions(substitutions.map(s =>
+      s.id === id ? { ...s, status } : s
+    ));
+    showAlert('success', `Substitution ${status.toLowerCase()}`);
+  };
+
+  // Add handler for migrating time slots
+  const handleMigrateTimeSlots = async () => {
+    if (!db) return;
+    
+    try {
+      showAlert('info', 'Migrating time slots to next semester...');
+      
+      // Get current time slots
+      const currentSlots = timeSlots.filter(slot => 
+        slot.semester === selectedSemester && 
+        slot.academicYear === selectedYear
+      );
+      
+      // Calculate next semester/year
+      const nextSemester = selectedSemester === 2 ? 1 : 2;
+      const nextYear = selectedSemester === 2 ? (parseInt(selectedYear) + 1).toString() : selectedYear;
+      
+      // Create new time slots for next semester
+      const newSlots: TimeSlot[] = [];
+      for (const slot of currentSlots) {
+        const newSlot = await db.create<TimeSlot>('timeSlots', {
+          courseId: slot.courseId,
+          facultyId: slot.facultyId,
+          roomId: slot.roomId,
+          departmentId: slot.departmentId,
+          dayOfWeek: slot.dayOfWeek,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          yearLevel: slot.yearLevel,
+          type: slot.type,
+          academicYear: nextYear,
+          semester: nextSemester,
+          isActive: true
+        });
+        newSlots.push(newSlot);
+      }
+      
+      setTimeSlots([...timeSlots, ...newSlots]);
+      showAlert('success', `Migrated ${newSlots.length} time slots to Semester ${nextSemester}, ${nextYear}`);
+    } catch (error) {
+      console.error('Failed to migrate time slots:', error);
+      showAlert('error', 'Failed to migrate time slots');
+    }
+  };
+
+  // Database diagnostics function
+  const runDatabaseDiagnostics = async () => {
+    if (!db) {
+      showAlert('error', 'Database not initialized');
+      return;
+    }
+
+    console.log('Running database diagnostics...');
+    
+    try {
+      const result = await DatabaseIntegrityChecker.verifyAndRepairDatabase(db);
+      
+      console.log('Diagnostic Results:', result);
+      
+      if (result.success) {
+        showAlert('success', result.message);
+        // Reload data after fixes
+        await loadAllData(db);
+      } else {
+        showAlert('warning', result.message);
+      }
+      
+      // Log detailed report to console
+      console.log('Detailed Report:', result.details);
+      
+      // Create download link for diagnostic data
+      const blob = new Blob([JSON.stringify(result.details, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `database-diagnostic-${new Date().toISOString()}.json`;
+      
+      // Ask user if they want to download the diagnostic file
+      if (window.confirm('Download diagnostic report?')) {
+        a.click();
+      }
+      
+      URL.revokeObjectURL(url);
+      
+      return result;
+    } catch (error) {
+      console.error('Diagnostic failed:', error);
+      showAlert('error', 'Failed to run database diagnostics');
+      return null;
+    }
+  };
+
+  // Menu Items with icon mapping
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'timetable', label: 'Timetable', icon: Calendar },
@@ -811,2085 +1640,264 @@ export default function PNGUnitechTimetableSystem() {
     { id: 'faculty', label: 'Faculty', icon: Users },
     { id: 'students', label: 'Students', icon: GraduationCap },
     { id: 'rooms', label: 'Rooms', icon: Building },
+    { id: 'attendance', label: 'Attendance', icon: User },
     { id: 'substitutions', label: 'Substitutions', icon: RefreshCw },
     { id: 'calendar', label: 'Academic Calendar', icon: CalendarPlus },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  // Render Functions for each section
-  const renderDashboard = () => (
-      <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-      >
-        <div className="flex justify-between items-center">
-          <h2 className="text-3xl font-bold text-gray-800">Dashboard</h2>
-          <div className="flex gap-3">
-            <button
-                onClick={generateTimetable}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Generate Timetable
-            </button>
-            <button
-                onClick={handleExport}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-            >
-              <Download className="w-4 h-4" />
-              Export Data
-            </button>
-          </div>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <motion.div
-              whileHover={{ scale: 1.02 }}
-              className="bg-white p-6 rounded-xl shadow-lg border border-gray-100"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm">Departments</p>
-                <p className="text-2xl font-bold text-gray-800">{departments.length}</p>
-              </div>
-              <Building2 className="w-10 h-10 text-blue-500" />
-            </div>
-          </motion.div>
-
-          <motion.div
-              whileHover={{ scale: 1.02 }}
-              className="bg-white p-6 rounded-xl shadow-lg border border-gray-100"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm">Total Courses</p>
-                <p className="text-2xl font-bold text-gray-800">{courses.length}</p>
-              </div>
-              <BookOpen className="w-10 h-10 text-green-500" />
-            </div>
-          </motion.div>
-
-          <motion.div
-              whileHover={{ scale: 1.02 }}
-              className="bg-white p-6 rounded-xl shadow-lg border border-gray-100"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm">Faculty Members</p>
-                <p className="text-2xl font-bold text-gray-800">{faculty.length}</p>
-              </div>
-              <Users className="w-10 h-10 text-purple-500" />
-            </div>
-          </motion.div>
-
-          <motion.div
-              whileHover={{ scale: 1.02 }}
-              className="bg-white p-6 rounded-xl shadow-lg border border-gray-100"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm">Students</p>
-                <p className="text-2xl font-bold text-gray-800">{students.length}</p>
-              </div>
-              <GraduationCap className="w-10 h-10 text-orange-500" />
-            </div>
-          </motion.div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-          <h3 className="text-lg font-semibold mb-4">System Status</h3>
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <Database className="w-5 h-5 text-green-500" />
-              <div className="flex-1">
-                <p className="text-sm font-medium">Database Connected</p>
-                <p className="text-xs text-gray-500">All systems operational</p>
-              </div>
-            </div>
-            {conflicts.length > 0 && (
-                <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg">
-                  <AlertCircle className="w-5 h-5 text-red-500" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{conflicts.length} Conflicts Detected</p>
-                    <p className="text-xs text-gray-500">Review and resolve scheduling conflicts</p>
-                  </div>
-                </div>
-            )}
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <Activity className="w-5 h-5 text-blue-500" />
-              <div className="flex-1">
-                <p className="text-sm font-medium">{timeSlots.length} Time Slots Scheduled</p>
-                <p className="text-xs text-gray-500">Current semester timetable</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-          <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <button
-                onClick={() => openModal('department')}
-                className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex flex-col items-center gap-2"
-            >
-              <Building2 className="w-6 h-6 text-gray-600" />
-              <span className="text-sm">Add Department</span>
-            </button>
-            <button
-                onClick={() => openModal('course')}
-                className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex flex-col items-center gap-2"
-            >
-              <BookPlus className="w-6 h-6 text-gray-600" />
-              <span className="text-sm">Add Course</span>
-            </button>
-            <button
-                onClick={() => openModal('faculty')}
-                className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex flex-col items-center gap-2"
-            >
-              <UserPlus className="w-6 h-6 text-gray-600" />
-              <span className="text-sm">Add Faculty</span>
-            </button>
-            <button
-                onClick={() => openModal('room')}
-                className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex flex-col items-center gap-2"
-            >
-              <MapPin className="w-6 h-6 text-gray-600" />
-              <span className="text-sm">Add Room</span>
-            </button>
-          </div>
-        </div>
-      </motion.div>
-  );
-
-  const renderTimetable = () => {
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    const timeSlotHours = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
-
-    return (
-        <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
-        >
-          <div className="flex justify-between items-center">
-            <h2 className="text-3xl font-bold text-gray-800">Weekly Timetable</h2>
-            <div className="flex gap-3">
-              <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="2025">2025</option>
-                <option value="2024">2024</option>
-              </select>
-              <select
-                  value={selectedSemester}
-                  onChange={(e) => setSelectedSemester(Number(e.target.value))}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value={1}>Semester 1</option>
-                <option value={2}>Semester 2</option>
-              </select>
-              <button
-                  onClick={() => openModal('timeslot')}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Add Time Slot
-              </button>
-            </div>
-          </div>
-
-          {/* Timetable Grid */}
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[800px]">
-                <thead>
-                <tr className="bg-gray-50">
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b">Time</th>
-                  {days.map(day => (
-                      <th key={day} className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b border-l">
-                        {day}
-                      </th>
-                  ))}
-                </tr>
-                </thead>
-                <tbody>
-                {timeSlotHours.map((hour, hourIndex) => (
-                    <tr key={hour} className={hourIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-4 py-2 text-sm font-medium text-gray-600 border-b whitespace-nowrap">
-                        {hour}
-                      </td>
-                      {days.map((day, dayIndex) => {
-                        const dayNumber = dayIndex + 1; // Monday = 1, Friday = 5
-                        const slot = timeSlots.find(
-                            s => s.dayOfWeek === dayNumber &&
-                                s.startTime === hour &&
-                                s.academicYear === selectedYear &&
-                                s.semester === selectedSemester &&
-                                s.isActive
-                        );
-
-                        if (slot) {
-                          const course = courses.find(c => c.id === slot.courseId);
-                          const room = rooms.find(r => r.id === slot.roomId);
-                          const instructor = faculty.find(f => f.id === slot.facultyId);
-
-                          return (
-                              <td key={day} className="px-2 py-2 border-b border-l relative h-20">
-                                <motion.div
-                                    initial={{ scale: 0.9, opacity: 0 }}
-                                    animate={{ scale: 1, opacity: 1 }}
-                                    className={`${course?.color || 'bg-gray-400'} text-white p-2 rounded-md text-xs h-full flex flex-col justify-center cursor-pointer hover:shadow-lg transition-shadow`}
-                                    onClick={() => openModal('timeslot', slot)}
-                                >
-                                  <p className="font-semibold">{course?.code}</p>
-                                  <p className="text-xs opacity-90">{room?.code}</p>
-                                  <p className="text-xs opacity-80">{instructor?.firstName} {instructor?.lastName}</p>
-                                </motion.div>
-                              </td>
-                          );
-                        }
-
-                        return (
-                            <td key={day} className="px-2 py-2 border-b border-l relative h-20 hover:bg-gray-100">
-                              <button
-                                  onClick={() => {
-                                    setFormData({
-                                      dayOfWeek: dayNumber,
-                                      startTime: hour,
-                                      endTime: addHours(hour, 1),
-                                      academicYear: selectedYear,
-                                      semester: selectedSemester
-                                    });
-                                    openModal('timeslot');
-                                  }}
-                                  className="w-full h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
-                              >
-                                <Plus className="w-4 h-4 text-gray-400" />
-                              </button>
-                            </td>
-                        );
-                      })}
-                    </tr>
-                ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Conflicts Display */}
-          {conflicts.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <AlertCircle className="w-5 h-5 text-red-600" />
-                  <h3 className="font-semibold text-red-800">Scheduling Conflicts ({conflicts.length})</h3>
-                </div>
-                <div className="space-y-2">
-                  {conflicts.map(conflict => (
-                      <div key={conflict.id} className="flex items-center justify-between p-2 bg-white rounded-lg">
-                        <div className="flex-1">
-                          <p className="text-sm text-red-700">{conflict.description}</p>
-                          <p className="text-xs text-red-500">Severity: {conflict.severity}</p>
-                        </div>
-                        <button
-                            onClick={() => {
-                              // Handle conflict resolution
-                              showAlert('info', 'Conflict resolution coming soon');
-                            }}
-                            className="px-3 py-1 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors text-sm"
-                        >
-                          Resolve
-                        </button>
-                      </div>
-                  ))}
-                </div>
-              </div>
-          )}
-        </motion.div>
-    );
-  };
-
-  const renderDepartments = () => (
-      <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-      >
-        <div className="flex justify-between items-center">
-          <h2 className="text-3xl font-bold text-gray-800">Departments</h2>
-          <button
-              onClick={() => openModal('department')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Department
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {departments.map(dept => (
-              <motion.div
-                  key={dept.id}
-                  whileHover={{ scale: 1.02 }}
-                  className="bg-white p-6 rounded-xl shadow-lg border border-gray-100"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-800">{dept.name}</h3>
-                    <p className="text-sm text-gray-600">Code: {dept.code}</p>
-                  </div>
-                  <Building2 className="w-8 h-8 text-blue-500" />
-                </div>
-                <div className="space-y-2">
-                  <div className="text-sm">
-                    <span className="text-gray-500">Department Head:</span>
-                    <p className="text-gray-700">{dept.head}</p>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-gray-500">Programs:</span>
-                    <p className="text-gray-700">{programs.filter(p => p.departmentId === dept.id).length}</p>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-gray-500">Faculty:</span>
-                    <p className="text-gray-700">{faculty.filter(f => f.departmentId === dept.id).length}</p>
-                  </div>
-                </div>
-                <div className="mt-4 pt-4 border-t flex gap-2">
-                  <button
-                      onClick={() => openModal('department', dept)}
-                      className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm flex items-center justify-center gap-1"
-                  >
-                    <Edit className="w-3 h-3" />
-                    Edit
-                  </button>
-                  <button
-                      onClick={() => handleDelete('department', dept.id)}
-                      className="flex-1 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm flex items-center justify-center gap-1"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                    Delete
-                  </button>
-                </div>
-              </motion.div>
-          ))}
-        </div>
-      </motion.div>
-  );
-
-  const renderPrograms = () => (
-      <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-      >
-        <div className="flex justify-between items-center">
-          <h2 className="text-3xl font-bold text-gray-800">Programs</h2>
-          <button
-              onClick={() => openModal('program')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Program
-          </button>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-          <div className="p-4 border-b flex gap-4">
-            <select
-                value={selectedDepartment}
-                onChange={(e) => setSelectedDepartment(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Departments</option>
-              {departments.map(dept => (
-                  <option key={dept.id} value={dept.id}>{dept.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <table className="w-full">
-            <thead>
-            <tr className="bg-gray-50">
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Code</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Name</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Department</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Level</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Duration</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
-            </tr>
-            </thead>
-            <tbody>
-            {programs
-                .filter(p => selectedDepartment === 'all' || p.departmentId === selectedDepartment)
-                .map((program, index) => {
-                  const dept = departments.find(d => d.id === program.departmentId);
-                  return (
-                      <tr key={program.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="px-6 py-4 text-sm font-medium text-gray-900">{program.code}</td>
-                        <td className="px-6 py-4 text-sm text-gray-700">{program.name}</td>
-                        <td className="px-6 py-4 text-sm text-gray-700">{dept?.name}</td>
-                        <td className="px-6 py-4 text-sm text-gray-700 capitalize">{program.level}</td>
-                        <td className="px-6 py-4 text-sm text-gray-700">{program.duration} years</td>
-                        <td className="px-6 py-4 text-sm">
-                          <button
-                              onClick={() => openModal('program', program)}
-                              className="text-blue-600 hover:text-blue-800 mr-3"
-                          >
-                            Edit
-                          </button>
-                          <button
-                              onClick={() => handleDelete('program', program.id)}
-                              className="text-red-600 hover:text-red-800"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
-  );
-
-  const renderCourses = () => {
-    const filteredCourses = courses.filter(course => {
-      const matchesSearch = course.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          course.code.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesDept = selectedDepartment === 'all' || course.departmentId === selectedDepartment;
-      const matchesProgram = selectedProgram === 'all' || course.programId === selectedProgram;
-      return matchesSearch && matchesDept && matchesProgram;
-    });
-
-    return (
-        <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
-        >
-          <div className="flex justify-between items-center">
-            <h2 className="text-3xl font-bold text-gray-800">Courses</h2>
-            <button
-                onClick={() => openModal('course')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Add Course
-            </button>
-          </div>
-
-          {/* Search and Filters */}
-          <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-100">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                    type="text"
-                    placeholder="Search courses..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <select
-                  value={selectedDepartment}
-                  onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Departments</option>
-                {departments.map(dept => (
-                    <option key={dept.id} value={dept.id}>{dept.name}</option>
-                ))}
-              </select>
-              <select
-                  value={selectedProgram}
-                  onChange={(e) => setSelectedProgram(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Programs</option>
-                {programs.map(prog => (
-                    <option key={prog.id} value={prog.id}>{prog.name}</option>
-                ))}
-              </select>
-              <div className="flex gap-2">
-                <button
-                    onClick={() => setSelectedView('grid')}
-                    className={`p-2 rounded-lg transition-colors ${selectedView === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
-                >
-                  <Grid className="w-5 h-5" />
-                </button>
-                <button
-                    onClick={() => setSelectedView('list')}
-                    className={`p-2 rounded-lg transition-colors ${selectedView === 'list' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
-                >
-                  <List className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Courses Display */}
-          {selectedView === 'grid' ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredCourses.map(course => {
-                  const program = programs.find(p => p.id === course.programId);
-                  const dept = departments.find(d => d.id === course.departmentId);
-
-                  return (
-                      <motion.div
-                          key={course.id}
-                          whileHover={{ scale: 1.02 }}
-                          className="bg-white p-6 rounded-xl shadow-lg border border-gray-100"
-                      >
-                        <div className="flex justify-between items-start mb-4">
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-800">{course.code}</h3>
-                            <p className="text-sm text-gray-600">{course.name}</p>
-                          </div>
-                          <div className={`w-3 h-3 rounded-full ${course.color}`}></div>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Department:</span>
-                            <span className="text-gray-700">{dept?.name}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Program:</span>
-                            <span className="text-gray-700">{program?.name}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Credits:</span>
-                            <span className="text-gray-700">{course.credits}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Year/Semester:</span>
-                            <span className="text-gray-700">Y{course.year} S{course.semester}</span>
-                          </div>
-                        </div>
-                        <div className="mt-4 pt-4 border-t flex gap-2">
-                          <button
-                              onClick={() => openModal('course', course)}
-                              className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm"
-                          >
-                            Edit
-                          </button>
-                          <button
-                              onClick={() => handleDelete('course', course.id)}
-                              className="flex-1 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </motion.div>
-                  );
-                })}
-              </div>
-          ) : (
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-                <table className="w-full">
-                  <thead>
-                  <tr className="bg-gray-50">
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Code</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Name</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Department</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Credits</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Year/Sem</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
-                  </tr>
-                  </thead>
-                  <tbody>
-                  {filteredCourses.map((course, index) => {
-                    const dept = departments.find(d => d.id === course.departmentId);
-
-                    return (
-                        <tr key={course.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                          <td className="px-6 py-4 text-sm font-medium text-gray-900">{course.code}</td>
-                          <td className="px-6 py-4 text-sm text-gray-700">{course.name}</td>
-                          <td className="px-6 py-4 text-sm text-gray-700">{dept?.name}</td>
-                          <td className="px-6 py-4 text-sm text-gray-700">{course.credits}</td>
-                          <td className="px-6 py-4 text-sm text-gray-700">Y{course.year} S{course.semester}</td>
-                          <td className="px-6 py-4 text-sm">
-                            <button
-                                onClick={() => openModal('course', course)}
-                                className="text-blue-600 hover:text-blue-800 mr-3"
-                            >
-                              Edit
-                            </button>
-                            <button
-                                onClick={() => handleDelete('course', course.id)}
-                                className="text-red-600 hover:text-red-800"
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                    );
-                  })}
-                  </tbody>
-                </table>
-              </div>
-          )}
-        </motion.div>
-    );
-  };
-
-  const renderFaculty = () => (
-      <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-      >
-        <div className="flex justify-between items-center">
-          <h2 className="text-3xl font-bold text-gray-800">Faculty Members</h2>
-          <button
-              onClick={() => openModal('faculty')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Faculty
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {faculty.map(member => {
-            const dept = departments.find(d => d.id === member.departmentId);
-
-            return (
-                <motion.div
-                    key={member.id}
-                    whileHover={{ scale: 1.02 }}
-                    className="bg-white p-6 rounded-xl shadow-lg border border-gray-100"
-                >
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center">
-                      <User className="w-8 h-8 text-gray-500" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800">
-                        {member.title} {member.firstName} {member.lastName}
-                      </h3>
-                      <p className="text-sm text-gray-600">{dept?.name}</p>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-sm">
-                      <span className="text-gray-500">Staff ID:</span>
-                      <p className="text-gray-700">{member.staffId}</p>
-                    </div>
-                    <div className="text-sm">
-                      <span className="text-gray-500">Email:</span>
-                      <p className="text-gray-700">{member.email}</p>
-                    </div>
-                    <div className="text-sm">
-                      <span className="text-gray-500">Office:</span>
-                      <p className="text-gray-700">{member.officeNumber}</p>
-                    </div>
-                    <div className="text-sm">
-                      <span className="text-gray-500">Office Hours:</span>
-                      <p className="text-gray-700">{member.officeHours}</p>
-                    </div>
-                  </div>
-                  <div className="mt-4 pt-4 border-t flex gap-2">
-                    <button
-                        onClick={() => openModal('faculty', member)}
-                        className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm"
-                    >
-                      Edit
-                    </button>
-                    <button
-                        onClick={() => handleDelete('faculty', member.id)}
-                        className="flex-1 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </motion.div>
-            );
-          })}
-        </div>
-      </motion.div>
-  );
-
-  const renderRooms = () => (
-      <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-      >
-        <div className="flex justify-between items-center">
-          <h2 className="text-3xl font-bold text-gray-800">Room Management</h2>
-          <button
-              onClick={() => openModal('room')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Room
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {rooms.map(room => (
-              <motion.div
-                  key={room.id}
-                  whileHover={{ scale: 1.02 }}
-                  className="bg-white p-6 rounded-xl shadow-lg border border-gray-100"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-800">{room.code}</h3>
-                    <p className="text-sm text-gray-600">{room.name}</p>
-                  </div>
-                  <span className={`px-2 py-1 text-xs rounded-full ${room.available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                {room.available ? 'Available' : 'Occupied'}
-              </span>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Building:</span>
-                    <span className="text-gray-700">{room.building}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Floor:</span>
-                    <span className="text-gray-700">{room.floor}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Capacity:</span>
-                    <span className="text-gray-700">{room.capacity} students</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Type:</span>
-                    <span className="text-gray-700 capitalize">{room.type}</span>
-                  </div>
-                  {room.equipment.length > 0 && (
-                      <div className="text-sm">
-                        <span className="text-gray-500">Equipment:</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {room.equipment.map((item, index) => (
-                              <span key={index} className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
-                        {item}
-                      </span>
-                          ))}
-                        </div>
-                      </div>
-                  )}
-                </div>
-                <div className="mt-4 pt-4 border-t flex gap-2">
-                  <button
-                      onClick={() => openModal('room', room)}
-                      className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm"
-                  >
-                    Edit
-                  </button>
-                  <button
-                      onClick={() => handleDelete('room', room.id)}
-                      className="flex-1 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </motion.div>
-          ))}
-        </div>
-      </motion.div>
-  );
-
-  const renderStudents = () => (
-      <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-      >
-        <div className="flex justify-between items-center">
-          <h2 className="text-3xl font-bold text-gray-800">Students</h2>
-          <button
-              onClick={() => openModal('student')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Student
-          </button>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-          <div className="p-4 border-b">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                  type="text"
-                  placeholder="Search students..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          <table className="w-full">
-            <thead>
-            <tr className="bg-gray-50">
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Student ID</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Name</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Email</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Program</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Year</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
-            </tr>
-            </thead>
-            <tbody>
-            {students
-                .filter(s =>
-                    searchTerm === '' ||
-                    s.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    s.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    s.studentId.toLowerCase().includes(searchTerm.toLowerCase())
-                )
-                .map((student, index) => {
-                  const program = programs.find(p => p.id === student.programId);
-
-                  return (
-                      <tr key={student.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="px-6 py-4 text-sm font-medium text-gray-900">{student.studentId}</td>
-                        <td className="px-6 py-4 text-sm text-gray-700">{student.firstName} {student.lastName}</td>
-                        <td className="px-6 py-4 text-sm text-gray-700">{student.email}</td>
-                        <td className="px-6 py-4 text-sm text-gray-700">{program?.name}</td>
-                        <td className="px-6 py-4 text-sm text-gray-700">Year {student.year}</td>
-                        <td className="px-6 py-4 text-sm">
-                          <button
-                              onClick={() => openModal('student', student)}
-                              className="text-blue-600 hover:text-blue-800 mr-3"
-                          >
-                            Edit
-                          </button>
-                          <button
-                              onClick={() => handleDelete('student', student.id)}
-                              className="text-red-600 hover:text-red-800"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
-  );
-
-  const renderSubstitutions = () => (
-      <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-      >
-        <div className="flex justify-between items-center">
-          <h2 className="text-3xl font-bold text-gray-800">Substitutions</h2>
-          <button
-              onClick={() => openModal('substitution')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Substitution
-          </button>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-          <table className="w-full">
-            <thead>
-            <tr className="bg-gray-50">
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Date</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Original Slot</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Substitute</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Reason</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
-            </tr>
-            </thead>
-            <tbody>
-            {substitutions.map((sub, index) => {
-              const slot = timeSlots.find(s => s.id === sub.originalSlotId);
-              const course = slot ? courses.find(c => c.id === slot.courseId) : null;
-              const originalFaculty = slot ? faculty.find(f => f.id === slot.facultyId) : null;
-              const substituteFaculty = sub.substituteFactoryId ? faculty.find(f => f.id === sub.substituteFactoryId) : null;
-
-              return (
-                  <tr key={sub.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-6 py-4 text-sm text-gray-700">
-                      {new Date(sub.date).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-700">
-                      {course?.code} - {originalFaculty?.firstName} {originalFaculty?.lastName}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-700">
-                      {substituteFaculty ? `${substituteFaculty.firstName} ${substituteFaculty.lastName}` : 'Not assigned'}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-700">{sub.reason}</td>
-                    <td className="px-6 py-4 text-sm">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                        sub.status === 'approved' ? 'bg-green-100 text-green-700' :
-                            sub.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                                'bg-yellow-100 text-yellow-700'
-                    }`}>
-                      {sub.status}
-                    </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {sub.status === 'pending' && (
-                          <>
-                            <button
-                                onClick={() => {
-                                  db?.update<Substitution>('substitutions', sub.id, { status: 'approved' });
-                                  setSubstitutions(substitutions.map(s =>
-                                      s.id === sub.id ? { ...s, status: 'approved' } : s
-                                  ));
-                                  showAlert('success', 'Substitution approved');
-                                }}
-                                className="text-green-600 hover:text-green-800 mr-3"
-                            >
-                              Approve
-                            </button>
-                            <button
-                                onClick={() => {
-                                  db?.update<Substitution>('substitutions', sub.id, { status: 'rejected' });
-                                  setSubstitutions(substitutions.map(s =>
-                                      s.id === sub.id ? { ...s, status: 'rejected' } : s
-                                  ));
-                                  showAlert('info', 'Substitution rejected');
-                                }}
-                                className="text-red-600 hover:text-red-800"
-                            >
-                              Reject
-                            </button>
-                          </>
-                      )}
-                    </td>
-                  </tr>
-              );
-            })}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
-  );
-
-  const renderAcademicCalendar = () => (
-      <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-      >
-        <div className="flex justify-between items-center">
-          <h2 className="text-3xl font-bold text-gray-800">Academic Calendar</h2>
-          <button
-              onClick={() => {
-                showAlert('info', 'Calendar editing coming soon');
-              }}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <CalendarPlus className="w-4 h-4" />
-            Add Academic Period
-          </button>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <div className="space-y-4">
-            {academicCalendar.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No academic calendar entries yet</p>
-            ) : (
-                academicCalendar.map(cal => (
-                    <div key={cal.id} className="border rounded-lg p-4">
-                      <h3 className="font-semibold text-lg mb-2">
-                        {cal.academicYear} - Semester {cal.semester}
-                      </h3>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="text-gray-500">Start Date:</span>
-                          <p className="text-gray-700">{new Date(cal.startDate).toLocaleDateString()}</p>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">End Date:</span>
-                          <p className="text-gray-700">{new Date(cal.endDate).toLocaleDateString()}</p>
-                        </div>
-                        {cal.breakStart && (
-                            <>
-                              <div>
-                                <span className="text-gray-500">Break Start:</span>
-                                <p className="text-gray-700">{new Date(cal.breakStart).toLocaleDateString()}</p>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Break End:</span>
-                                <p className="text-gray-700">{new Date(cal.breakEnd!).toLocaleDateString()}</p>
-                              </div>
-                            </>
-                        )}
-                      </div>
-                    </div>
-                ))
-            )}
-          </div>
-        </div>
-      </motion.div>
-  );
-
-  const renderAnalytics = () => (
-      <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-      >
-        <h2 className="text-3xl font-bold text-gray-800">Analytics & Reports</h2>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Room Utilization */}
-          <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-            <h3 className="text-lg font-semibold mb-4">Room Utilization</h3>
-            <div className="space-y-3">
-              {rooms.slice(0, 5).map(room => {
-                const roomSlots = timeSlots.filter(s => s.roomId === room.id);
-                const utilization = Math.round((roomSlots.length / 40) * 100); // Assume 40 hours/week max
-
-                return (
-                    <div key={room.id} className="flex items-center gap-3">
-                      <span className="text-sm font-medium w-20">{room.code}</span>
-                      <div className="flex-1 bg-gray-200 rounded-full h-2">
-                        <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${utilization}%` }}
-                            transition={{ duration: 1, delay: 0.2 }}
-                            className="bg-blue-500 h-2 rounded-full"
-                        />
-                      </div>
-                      <span className="text-sm text-gray-600 w-12 text-right">{utilization}%</span>
-                    </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Department Statistics */}
-          <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-            <h3 className="text-lg font-semibold mb-4">Department Course Load</h3>
-            <div className="space-y-3">
-              {departments.map(dept => {
-                const deptCourses = courses.filter(c => c.departmentId === dept.id);
-                const deptFaculty = faculty.filter(f => f.departmentId === dept.id);
-
-                return (
-                    <div key={dept.id} className="flex items-center justify-between">
-                      <span className="text-sm">{dept.name}</span>
-                      <div className="flex items-center gap-4">
-                        <span className="text-sm text-gray-600">{deptCourses.length} courses</span>
-                        <span className="text-sm text-gray-600">{deptFaculty.length} faculty</span>
-                      </div>
-                    </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Student Statistics */}
-          <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-            <h3 className="text-lg font-semibold mb-4">Student Distribution</h3>
-            <div className="text-center">
-              <p className="text-3xl font-bold text-blue-600">{students.length}</p>
-              <p className="text-sm text-gray-600">Total Students</p>
-            </div>
-            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t">
-              <div className="text-center">
-                <p className="text-xl font-semibold text-green-600">
-                  {students.filter(s => {
-                    const prog = programs.find(p => p.id === s.programId);
-                    return prog?.level === 'undergraduate';
-                  }).length}
-                </p>
-                <p className="text-xs text-gray-600">Undergraduate</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xl font-semibold text-purple-600">
-                  {students.filter(s => {
-                    const prog = programs.find(p => p.id === s.programId);
-                    return prog?.level === 'postgraduate';
-                  }).length}
-                </p>
-                <p className="text-xs text-gray-600">Postgraduate</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Reports Generation */}
-          <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-            <h3 className="text-lg font-semibold mb-4">Generate Reports</h3>
-            <div className="space-y-3">
-              <button
-                  onClick={() => showAlert('info', 'Report generation coming soon')}
-                  className="w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-between text-left"
-              >
-                <span className="text-sm font-medium">Weekly Timetable Report</span>
-                <FileText className="w-4 h-4 text-gray-500" />
-              </button>
-              <button
-                  onClick={() => showAlert('info', 'Report generation coming soon')}
-                  className="w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-between text-left"
-              >
-                <span className="text-sm font-medium">Faculty Workload Report</span>
-                <FileText className="w-4 h-4 text-gray-500" />
-              </button>
-              <button
-                  onClick={() => showAlert('info', 'Report generation coming soon')}
-                  className="w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-between text-left"
-              >
-                <span className="text-sm font-medium">Room Utilization Report</span>
-                <FileText className="w-4 h-4 text-gray-500" />
-              </button>
-              <button
-                  onClick={() => showAlert('info', 'Report generation coming soon')}
-                  className="w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-between text-left"
-              >
-                <span className="text-sm font-medium">Student Enrollment Report</span>
-                <FileText className="w-4 h-4 text-gray-500" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-  );
-
-  const renderSettings = () => (
-      <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-      >
-        <h2 className="text-3xl font-bold text-gray-800">Settings</h2>
-
-        <div className="bg-white rounded-xl shadow-lg divide-y">
-          <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4">General Settings</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Academic Year</label>
-                <select
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="2025">2025</option>
-                  <option value="2024">2024</option>
-                  <option value="2026">2026</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Current Semester</label>
-                <select
-                    value={selectedSemester}
-                    onChange={(e) => setSelectedSemester(Number(e.target.value))}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value={1}>Semester 1</option>
-                  <option value={2}>Semester 2</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Data Management</h3>
-            <div className="space-y-4">
-              <button
-                  onClick={handleExport}
-                  className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-              >
-                <Download className="w-4 h-4" />
-                Export All Data
-              </button>
-              <label className="w-full">
-                <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleImport}
-                    className="hidden"
-                />
-                <div className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 cursor-pointer">
-                  <Upload className="w-4 h-4" />
-                  Import Data
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4">System Information</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Version:</span>
-                <span className="text-gray-700">1.0.0</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Database:</span>
-                <span className="text-gray-700">IndexedDB (Local)</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Last Backup:</span>
-                <span className="text-gray-700">{new Date().toLocaleDateString()}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-  );
-
-  // Modal Component
-  const renderModal = () => {
-    if (!showModal) return null;
-
-    const modalTitles = {
-      department: editingItem ? 'Edit Department' : 'Add Department',
-      program: editingItem ? 'Edit Program' : 'Add Program',
-      course: editingItem ? 'Edit Course' : 'Add Course',
-      faculty: editingItem ? 'Edit Faculty' : 'Add Faculty',
-      room: editingItem ? 'Edit Room' : 'Add Room',
-      student: editingItem ? 'Edit Student' : 'Add Student',
-      timeslot: editingItem ? 'Edit Time Slot' : 'Add Time Slot',
-      substitution: editingItem ? 'Edit Substitution' : 'Add Substitution'
-    };
-
-    return (
-        <AnimatePresence>
-          <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-              onClick={closeModal}
-          >
-            <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto m-4"
-                onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-6 border-b flex justify-between items-center">
-                <h3 className="text-xl font-semibold">{modalTitles[modalType]}</h3>
-                <button
-                    onClick={closeModal}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="p-6">
-                {modalType === 'department' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Department Name</label>
-                        <input
-                            type="text"
-                            value={formData.name || ''}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., Computer Science"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Department Code</label>
-                        <input
-                            type="text"
-                            value={formData.code || ''}
-                            onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., CS"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Department Head</label>
-                        <input
-                            type="text"
-                            value={formData.head || ''}
-                            onChange={(e) => setFormData({ ...formData, head: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., Dr. John Smith"
-                        />
-                      </div>
-                    </div>
-                )}
-
-                {modalType === 'program' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Program Name</label>
-                        <input
-                            type="text"
-                            value={formData.name || ''}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., Bachelor of Computer Science"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Program Code</label>
-                        <input
-                            type="text"
-                            value={formData.code || ''}
-                            onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., BCS"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
-                        <select
-                            value={formData.departmentId || ''}
-                            onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select Department</option>
-                          {departments.map(dept => (
-                              <option key={dept.id} value={dept.id}>{dept.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Level</label>
-                        <select
-                            value={formData.level || 'undergraduate'}
-                            onChange={(e) => setFormData({ ...formData, level: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="undergraduate">Undergraduate</option>
-                          <option value="postgraduate">Postgraduate</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Duration (years)</label>
-                        <input
-                            type="number"
-                            value={formData.duration || ''}
-                            onChange={(e) => setFormData({ ...formData, duration: parseInt(e.target.value) })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., 4"
-                        />
-                      </div>
-                    </div>
-                )}
-
-                {modalType === 'course' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Course Code</label>
-                        <input
-                            type="text"
-                            value={formData.code || ''}
-                            onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., CS101"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Course Name</label>
-                        <input
-                            type="text"
-                            value={formData.name || ''}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., Introduction to Programming"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
-                          <select
-                              value={formData.departmentId || ''}
-                              onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">Select Department</option>
-                            {departments.map(dept => (
-                                <option key={dept.id} value={dept.id}>{dept.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Program</label>
-                          <select
-                              value={formData.programId || ''}
-                              onChange={(e) => setFormData({ ...formData, programId: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">Select Program</option>
-                            {programs
-                                .filter(p => !formData.departmentId || p.departmentId === formData.departmentId)
-                                .map(prog => (
-                                    <option key={prog.id} value={prog.id}>{prog.name}</option>
-                                ))}
-                          </select>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Credits</label>
-                          <input
-                              type="number"
-                              value={formData.credits || ''}
-                              onChange={(e) => setFormData({ ...formData, credits: parseInt(e.target.value) })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="e.g., 3"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Year</label>
-                          <input
-                              type="number"
-                              value={formData.year || ''}
-                              onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="e.g., 1"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Semester</label>
-                          <select
-                              value={formData.semester || ''}
-                              onChange={(e) => setFormData({ ...formData, semester: parseInt(e.target.value) })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">Select</option>
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                        <textarea
-                            value={formData.description || ''}
-                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            rows={3}
-                            placeholder="Course description..."
-                        />
-                      </div>
-                    </div>
-                )}
-
-                {modalType === 'faculty' && (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                          <select
-                              value={formData.title || ''}
-                              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">Select</option>
-                            <option value="Mr.">Mr.</option>
-                            <option value="Mrs.">Mrs.</option>
-                            <option value="Ms.">Ms.</option>
-                            <option value="Dr.">Dr.</option>
-                            <option value="Prof.">Prof.</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
-                          <input
-                              type="text"
-                              value={formData.firstName || ''}
-                              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="John"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
-                          <input
-                              type="text"
-                              value={formData.lastName || ''}
-                              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="Smith"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Staff ID</label>
-                        <input
-                            type="text"
-                            value={formData.staffId || ''}
-                            onChange={(e) => setFormData({ ...formData, staffId: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., FAC001"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                          <input
-                              type="email"
-                              value={formData.email || ''}
-                              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="john.smith@pnguot.ac.pg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
-                          <input
-                              type="tel"
-                              value={formData.phone || ''}
-                              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="+675 7XX XXXXX"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
-                        <select
-                            value={formData.departmentId || ''}
-                            onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select Department</option>
-                          {departments.map(dept => (
-                              <option key={dept.id} value={dept.id}>{dept.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Office Number</label>
-                          <input
-                              type="text"
-                              value={formData.officeNumber || ''}
-                              onChange={(e) => setFormData({ ...formData, officeNumber: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="e.g., A201"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Office Hours</label>
-                          <input
-                              type="text"
-                              value={formData.officeHours || ''}
-                              onChange={(e) => setFormData({ ...formData, officeHours: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="e.g., Mon-Wed 2-4pm"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Specialization</label>
-                        <input
-                            type="text"
-                            value={formData.specialization || ''}
-                            onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., Artificial Intelligence"
-                        />
-                      </div>
-                    </div>
-                )}
-
-                {modalType === 'room' && (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Room Code</label>
-                          <input
-                              type="text"
-                              value={formData.code || ''}
-                              onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="e.g., LT-101"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Room Name</label>
-                          <input
-                              type="text"
-                              value={formData.name || ''}
-                              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="e.g., Lecture Theater 1"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Building</label>
-                          <input
-                              type="text"
-                              value={formData.building || ''}
-                              onChange={(e) => setFormData({ ...formData, building: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="e.g., Main Building"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Floor</label>
-                          <input
-                              type="number"
-                              value={formData.floor || ''}
-                              onChange={(e) => setFormData({ ...formData, floor: parseInt(e.target.value) })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="e.g., 1"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Capacity</label>
-                          <input
-                              type="number"
-                              value={formData.capacity || ''}
-                              onChange={(e) => setFormData({ ...formData, capacity: parseInt(e.target.value) })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="e.g., 100"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Room Type</label>
-                        <select
-                            value={formData.type || ''}
-                            onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select Type</option>
-                          <option value="lecture">Lecture Hall</option>
-                          <option value="tutorial">Tutorial Room</option>
-                          <option value="lab">Laboratory</option>
-                          <option value="computer">Computer Lab</option>
-                          <option value="workshop">Workshop</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Equipment (comma-separated)</label>
-                        <input
-                            type="text"
-                            value={formData.equipment?.join(', ') || ''}
-                            onChange={(e) => setFormData({
-                              ...formData,
-                              equipment: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                            })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., Projector, Whiteboard, AC"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Features (comma-separated)</label>
-                        <input
-                            type="text"
-                            value={formData.features?.join(', ') || ''}
-                            onChange={(e) => setFormData({
-                              ...formData,
-                              features: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                            })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., Wheelchair Access, Sound System"
-                        />
-                      </div>
-                      <div className="flex items-center">
-                        <input
-                            type="checkbox"
-                            id="available"
-                            checked={formData.available !== false}
-                            onChange={(e) => setFormData({ ...formData, available: e.target.checked })}
-                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                        />
-                        <label htmlFor="available" className="ml-2 text-sm text-gray-700">
-                          Room is available for scheduling
-                        </label>
-                      </div>
-                    </div>
-                )}
-
-                {modalType === 'student' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Student ID</label>
-                        <input
-                            type="text"
-                            value={formData.studentId || ''}
-                            onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="e.g., 21001234"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
-                          <input
-                              type="text"
-                              value={formData.firstName || ''}
-                              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="John"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
-                          <input
-                              type="text"
-                              value={formData.lastName || ''}
-                              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="Doe"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                          <input
-                              type="email"
-                              value={formData.email || ''}
-                              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="john.doe@student.pnguot.ac.pg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
-                          <input
-                              type="tel"
-                              value={formData.phone || ''}
-                              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="+675 7XX XXXXX"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Program</label>
-                          <select
-                              value={formData.programId || ''}
-                              onChange={(e) => setFormData({ ...formData, programId: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">Select Program</option>
-                            {programs.map(prog => (
-                                <option key={prog.id} value={prog.id}>{prog.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Year</label>
-                          <input
-                              type="number"
-                              value={formData.year || ''}
-                              onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="e.g., 1"
-                              min="1"
-                              max="6"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                )}
-
-                {modalType === 'timeslot' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Course</label>
-                        <select
-                            value={formData.courseId || ''}
-                            onChange={(e) => setFormData({ ...formData, courseId: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select Course</option>
-                          {courses.map(course => (
-                              <option key={course.id} value={course.id}>{course.code} - {course.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Faculty</label>
-                        <select
-                            value={formData.facultyId || ''}
-                            onChange={(e) => setFormData({ ...formData, facultyId: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select Faculty</option>
-                          {faculty.map(member => (
-                              <option key={member.id} value={member.id}>
-                                {member.title} {member.firstName} {member.lastName}
-                              </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Room</label>
-                        <select
-                            value={formData.roomId || ''}
-                            onChange={(e) => setFormData({ ...formData, roomId: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select Room</option>
-                          {rooms.filter(r => r.available).map(room => (
-                              <option key={room.id} value={room.id}>
-                                {room.code} - {room.name} (Cap: {room.capacity})
-                              </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Day of Week</label>
-                          <select
-                              value={formData.dayOfWeek || ''}
-                              onChange={(e) => setFormData({ ...formData, dayOfWeek: parseInt(e.target.value) })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">Select Day</option>
-                            <option value="1">Monday</option>
-                            <option value="2">Tuesday</option>
-                            <option value="3">Wednesday</option>
-                            <option value="4">Thursday</option>
-                            <option value="5">Friday</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                          <select
-                              value={formData.type || 'lecture'}
-                              onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="lecture">Lecture</option>
-                            <option value="tutorial">Tutorial</option>
-                            <option value="lab">Lab</option>
-                            <option value="workshop">Workshop</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Start Time</label>
-                          <input
-                              type="time"
-                              value={formData.startTime || ''}
-                              onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">End Time</label>
-                          <input
-                              type="time"
-                              value={formData.endTime || ''}
-                              onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                )}
-
-                {modalType === 'substitution' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Original Time Slot</label>
-                        <select
-                            value={formData.originalSlotId || ''}
-                            onChange={(e) => setFormData({ ...formData, originalSlotId: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select Time Slot</option>
-                          {timeSlots.map(slot => {
-                            const course = courses.find(c => c.id === slot.courseId);
-                            const facultyMember = faculty.find(f => f.id === slot.facultyId);
-                            return (
-                                <option key={slot.id} value={slot.id}>
-                                  {getDayName(slot.dayOfWeek)} {slot.startTime} - {course?.code} ({facultyMember?.firstName} {facultyMember?.lastName})
-                                </option>
-                            );
-                          })}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Substitute Faculty</label>
-                        <select
-                            value={formData.substituteFactoryId || ''}
-                            onChange={(e) => setFormData({ ...formData, substituteFactoryId: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select Faculty</option>
-                          {faculty.map(member => (
-                              <option key={member.id} value={member.id}>
-                                {member.title} {member.firstName} {member.lastName}
-                              </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
-                        <input
-                            type="date"
-                            value={formData.date ? new Date(formData.date).toISOString().split('T')[0] : ''}
-                            onChange={(e) => setFormData({ ...formData, date: new Date(e.target.value) })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Reason</label>
-                        <textarea
-                            value={formData.reason || ''}
-                            onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            rows={3}
-                            placeholder="Reason for substitution..."
-                        />
-                      </div>
-                    </div>
-                )}
-              </div>
-
-              <div className="p-6 border-t flex justify-end gap-3">
-                <button
-                    onClick={closeModal}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                    onClick={editingItem ? handleUpdate : handleCreate}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  {editingItem ? 'Update' : 'Create'}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        </AnimatePresence>
-    );
-  };
-
   // Main render
   if (loading) {
     return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="text-center">
-            <Loader className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-            <p className="text-gray-600">Loading PNG University of Technology Timetable System...</p>
-          </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading PNG University of Technology Timetable System...</p>
         </div>
+      </div>
     );
   }
 
   return (
-      <div className="min-h-screen bg-gray-50">
-        {/* Alert Toast */}
-        <AnimatePresence>
-          {alert.show && (
-              <motion.div
-                  initial={{ opacity: 0, y: -50 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -50 }}
-                  className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg ${
-                      alert.type === 'success' ? 'bg-green-500 text-white' :
-                          alert.type === 'error' ? 'bg-red-500 text-white' :
-                              alert.type === 'warning' ? 'bg-yellow-500 text-white' :
-                                  'bg-blue-500 text-white'
-                  }`}
-              >
-                {alert.type === 'success' && <CheckCircle className="w-5 h-5" />}
-                {alert.type === 'error' && <XCircle className="w-5 h-5" />}
-                {alert.type === 'warning' && <AlertTriangle className="w-5 h-5" />}
-                {alert.type === 'info' && <Info className="w-5 h-5" />}
-                <p>{alert.message}</p>
-              </motion.div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Alert Component */}
+      <Alert 
+        show={alert.show}
+        type={alert.type}
+        message={alert.message}
+      />
+
+      {/* Sidebar Component */}
+      <Sidebar
+        sidebarOpen={sidebarOpen}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        menuItems={menuItems}
+      />
+
+      {/* Main Content */}
+      <div className={`transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-4'}`}>
+        {/* Header Component */}
+        <Header
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          showNotifications={showNotifications}
+          setShowNotifications={setShowNotifications}
+          conflicts={conflicts}
+        />
+
+        {/* Page Content */}
+        <main className="p-6">
+          {activeTab === 'dashboard' && (
+            <Dashboard 
+              departments={departments}
+              courses={courses}
+              faculty={faculty}
+              students={students}
+              rooms={rooms}
+              timeSlots={timeSlots}
+              conflicts={conflicts}
+              onGenerateTimetable={generateTimetable}
+              onExport={handleExport}
+              openModal={openModal}
+              onMigrateTimeSlots={handleMigrateTimeSlots}
+            />
           )}
-        </AnimatePresence>
 
-        {/* Sidebar */}
-        <motion.div
-            initial={{ x: -300 }}
-            animate={{ x: sidebarOpen ? 0 : -260 }}
-            className="fixed left-0 top-0 h-full w-64 bg-white shadow-xl z-40"
-        >
-          <div className="p-6 border-b">
-            <h1 className="text-xl font-bold text-gray-800">PNGUOT Timetable</h1>
-            <p className="text-sm text-gray-600">Management System</p>
-          </div>
-          <nav className="p-4">
-            {menuItems.map(item => (
-                <button
-                    key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors mb-2 ${
-                        activeTab === item.id
-                            ? 'bg-blue-50 text-blue-600'
-                            : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                >
-                  <item.icon className="w-5 h-5" />
-                  <span className="font-medium">{item.label}</span>
-                </button>
-            ))}
-          </nav>
-        </motion.div>
-
-        {/* Main Content */}
-        <div className={`transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-4'}`}>
-          {/* Header */}
-          <header className="bg-white shadow-sm border-b">
-            <div className="flex items-center justify-between p-4">
-              <button
-                  onClick={() => setSidebarOpen(!sidebarOpen)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <Menu className="w-6 h-6 text-gray-700" />
-              </button>
-              <div className="flex items-center gap-4">
-                <button
-                    onClick={() => setShowNotifications(!showNotifications)}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative"
-                >
-                  <Bell className="w-6 h-6 text-gray-700" />
-                  {conflicts.length > 0 && (
-                      <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                  )}
-                </button>
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
-                    <User className="w-5 h-5 text-gray-600" />
-                  </div>
-                  <span className="text-sm font-medium text-gray-700">Admin</span>
-                </div>
-              </div>
-            </div>
-          </header>
-
-          {/* Page Content */}
-          <main className="p-6">
-            {activeTab === 'dashboard' && renderDashboard()}
-            {activeTab === 'timetable' && renderTimetable()}
-            {activeTab === 'departments' && renderDepartments()}
-            {activeTab === 'programs' && renderPrograms()}
-            {activeTab === 'courses' && renderCourses()}
-            {activeTab === 'faculty' && renderFaculty()}
-            {activeTab === 'rooms' && renderRooms()}
-            {activeTab === 'students' && renderStudents()}
-            {activeTab === 'substitutions' && renderSubstitutions()}
-            {activeTab === 'calendar' && renderAcademicCalendar()}
-            {activeTab === 'analytics' && renderAnalytics()}
-            {activeTab === 'settings' && renderSettings()}
-          </main>
-        </div>
-
-        {/* Modal */}
-        {renderModal()}
+          {activeTab === 'attendance' && (
+            <AttendanceSection
+              students={students}
+              timeSlots={timeSlots}
+              courses={courses}
+              faculty={faculty}
+              rooms={rooms}
+              conflicts={conflicts}
+              departments={departments}
+              selectedYear={selectedYear}
+              selectedSemester={selectedSemester}
+              setSelectedYear={setSelectedYear}
+              setSelectedSemester={setSelectedSemester}
+              openModal={openModal}
+              showAlert={showAlert}
+              setFormData={setFormData}
+              attendance={attendance}
+              currentUser={currentUser}
+              onMarkAttendance={onMarkAttendance}
+              onUpdateAttendance={onUpdateAttendance}
+            />
+          )}
+          
+          {activeTab === 'timetable' && (
+            <TimetableSection
+              timeSlots={timeSlots}
+              courses={courses}
+              faculty={faculty}
+              rooms={rooms}
+              conflicts={conflicts}
+              departments={departments}
+              students={students}
+              attendance={attendance}
+              currentUser={currentUser}
+              selectedYear={selectedYear}
+              selectedSemester={selectedSemester}
+              setSelectedYear={setSelectedYear}
+              setSelectedSemester={setSelectedSemester}
+              setTimeSlots={setTimeSlots}
+              setConflicts={setConflicts}
+              openModal={openModal}
+              showAlert={showAlert}
+              setFormData={setFormData}
+              handleDelete={handleDelete}
+              onMarkAttendance={onMarkAttendance}
+              db={db}
+              onRecalculateConflicts={checkConflicts} // NEW
+            />
+          )}
+          
+          {activeTab === 'departments' && (
+            <Departments
+              departments={departments}
+              programs={programs}
+              faculty={faculty}
+              openModal={openModal}
+              handleDelete={handleDelete}
+              selectedView={selectedView}
+              setSelectedView={setSelectedView}
+            />
+          )}
+          
+          {activeTab === 'programs' && (
+            <Programs
+              programs={programs}
+              departments={departments}
+              selectedDepartment={selectedDepartment}
+              setSelectedDepartment={setSelectedDepartment}
+              openModal={openModal}
+              handleDelete={handleDelete}
+              selectedView={selectedView}
+              setSelectedView={setSelectedView}
+            />
+          )}
+          
+          {activeTab === 'courses' && (
+            <Courses
+              courses={courses}
+              departments={departments}
+              programs={programs}
+              selectedView={selectedView}
+              setSelectedView={setSelectedView}
+              openModal={openModal}
+              handleDelete={handleDelete}
+            />
+          )}
+          
+          {activeTab === 'faculty' && (
+            <FacultySection
+              faculty={faculty}
+              departments={departments}
+              openModal={openModal}
+              handleDelete={handleDelete}
+            />
+          )}
+          
+          {activeTab === 'rooms' && (
+            <Rooms
+              rooms={rooms}
+              openModal={openModal}
+              handleDelete={handleDelete}
+            />
+          )}
+          
+          {activeTab === 'students' && (
+            <Students
+              students={students}
+              programs={programs}
+              courses={courses}
+              searchTerm={searchTerm}
+              setSearchTerm={setSearchTerm}
+              openModal={openModal}
+              handleDelete={handleDelete}
+              handleBulkImport={handleBulkImport}
+              
+            />
+          )}
+          
+          {activeTab === 'substitutions' && (
+            <Substitutions
+              substitutions={substitutions}
+              timeSlots={timeSlots}
+              courses={courses}
+              faculty={faculty}
+              openModal={openModal}
+              handleSubstitutionAction={handleSubstitutionAction}
+            />
+          )}
+          
+          {activeTab === 'calendar' && (
+            <AcademicCalendarSection
+              academicCalendar={academicCalendar}
+              showAlert={showAlert}
+            />
+          )}
+          
+          {activeTab === 'analytics' && (
+            <Analytics
+              departments={departments}
+              programs={programs}
+              courses={courses}
+              faculty={faculty}
+              students={students}
+              rooms={rooms}
+              timeSlots={timeSlots}
+              showAlert={showAlert}
+            />
+          )}
+          
+          {activeTab === 'settings' && (
+            <SettingsSection
+              selectedYear={selectedYear}
+              setSelectedYear={setSelectedYear}
+              selectedSemester={selectedSemester}
+              setSelectedSemester={setSelectedSemester}
+              handleExport={handleExport}
+              handleImport={handleImport}
+              onRunDiagnostics={runDatabaseDiagnostics}
+              onClearDatabase={async () => {
+                if (window.confirm('⚠️ This will permanently delete ALL data. Are you absolutely sure?')) {
+                  if (window.confirm('⚠️ FINAL WARNING: This action cannot be undone. Continue?')) {
+                    try {
+                      await db?.clearDatabase();
+                      window.location.reload();
+                    } catch (error) {
+                      showAlert('error', 'Failed to clear database');
+                    }
+                  }
+                }
+              }}
+            />
+          )}
+        </main>
       </div>
+
+      {/* Modal */}
+      <FormModal
+        showModal={showModal}
+        modalType={modalType}
+        editingItem={editingItem}
+        formData={formData}
+        setFormData={setFormData}
+        closeModal={closeModal}
+        handleCreate={handleCreate}
+        handleUpdate={handleUpdate}
+        departments={departments}
+        programs={programs}
+        courses={courses}
+        faculty={faculty}
+        rooms={rooms}
+        timeSlots={timeSlots}
+        getDayName={getDayName}
+      />
+    </div>
   );
 }
-
