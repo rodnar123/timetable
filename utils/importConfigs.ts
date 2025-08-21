@@ -321,6 +321,7 @@ export const facultyImportConfig: ImportConfig<Faculty> = {
   entityName: 'Faculty',
   entityNamePlural: 'Faculty',
   fields: [
+    { key: 'staffId', label: 'Staff ID', required: true, type: 'string' },
     { key: 'firstName', label: 'First Name', required: true, type: 'string' },
     { key: 'lastName', label: 'Last Name', required: true, type: 'string' },
     { key: 'title', label: 'Title', required: false, type: 'string' },
@@ -328,9 +329,11 @@ export const facultyImportConfig: ImportConfig<Faculty> = {
     { key: 'phone', label: 'Phone', required: false, type: 'phone' },
     { key: 'departmentCode', label: 'Department Code', required: true, type: 'string' },
     { key: 'specialization', label: 'Specialization', required: false, type: 'string' },
-    { key: 'isActive', label: 'Active Status', required: false, type: 'boolean' }
+    { key: 'officeNumber', label: 'Office Number', required: false, type: 'string' },
+    { key: 'officeHours', label: 'Office Hours', required: false, type: 'string' }
   ],
   columnMappings: {
+    staffId: ['Staff ID', 'StaffID', 'Employee ID', 'ID'],
     firstName: ['First Name', 'FirstName', 'Given Name', 'FName'],
     lastName: ['Last Name', 'LastName', 'Surname', 'LName'],
     title: ['Title', 'Academic Title', 'Position'],
@@ -338,17 +341,27 @@ export const facultyImportConfig: ImportConfig<Faculty> = {
     phone: ['Phone', 'Phone Number', 'Contact', 'Mobile', 'Tel'],
     departmentCode: ['Department Code', 'Dept Code', 'Department', 'DeptCode'],
     specialization: ['Specialization', 'Area of Expertise', 'Field', 'Specialty'],
-    isActive: ['Active', 'Status', 'Active Status', 'Is Active']
+    officeNumber: ['Office Number', 'Office', 'Room Number', 'Office Room'],
+    officeHours: ['Office Hours', 'Hours', 'Available Hours', 'Consultation Hours']
   },
   validateRow: (row: any, index: number, existingData: { faculty: Faculty[], departments: Department[] } = { faculty: [], departments: [] }) => {
     const errors: string[] = [];
     const { faculty = [], departments = [] } = existingData;
     
     // Required field validation
+    if (!row.staffId || String(row.staffId).trim() === '') errors.push('Staff ID is required');
     if (!row.firstName || String(row.firstName).trim() === '') errors.push('First name is required');
     if (!row.lastName || String(row.lastName).trim() === '') errors.push('Last name is required');
     if (!row.email || String(row.email).trim() === '') errors.push('Email is required');
     if (!row.departmentCode || String(row.departmentCode).trim() === '') errors.push('Department code is required');
+    
+    // Staff ID uniqueness check
+    if (row.staffId) {
+      const staffId = String(row.staffId).trim();
+      if (faculty.some(f => f.staffId === staffId)) {
+        errors.push(`Staff ID "${staffId}" already exists`);
+      }
+    }
     
     // Email validation
     if (row.email) {
@@ -378,14 +391,8 @@ export const facultyImportConfig: ImportConfig<Faculty> = {
     const { departments = [] } = existingData;
     const department = departments.find(dept => dept.code.toUpperCase() === String(row.departmentCode || '').trim().toUpperCase());
     
-    // Parse boolean status
-    let isActive = true;
-    if (row.isActive !== undefined && row.isActive !== null && row.isActive !== '') {
-      const activeStr = String(row.isActive).toLowerCase().trim();
-      isActive = activeStr === 'true' || activeStr === '1' || activeStr === 'yes' || activeStr === 'active';
-    }
-    
     return {
+      staffId: String(row.staffId || '').trim(),
       firstName: String(row.firstName || '').trim(),
       lastName: String(row.lastName || '').trim(),
       title: String(row.title || 'Mr.').trim(),
@@ -393,11 +400,13 @@ export const facultyImportConfig: ImportConfig<Faculty> = {
       phone: String(row.phone || '').trim(),
       departmentId: department?.id || '',
       specialization: String(row.specialization || '').trim(),
-      isActive
+      officeNumber: String(row.officeNumber || '').trim(),
+      officeHours: String(row.officeHours || '').trim()
     };
   },
   sampleData: [
     {
+      'Staff ID': 'FAC001',
       'First Name': 'John',
       'Last Name': 'Smith',
       'Title': 'Dr.',
@@ -405,9 +414,11 @@ export const facultyImportConfig: ImportConfig<Faculty> = {
       'Phone': '+1-555-1001',
       'Department Code': 'CS',
       'Specialization': 'Artificial Intelligence',
-      'Active Status': 'true'
+      'Office Number': 'CS-201',
+      'Office Hours': 'Mon-Wed 10:00-12:00'
     },
     {
+      'Staff ID': 'FAC002',
       'First Name': 'Jane',
       'Last Name': 'Doe',
       'Title': 'Prof.',
@@ -415,9 +426,11 @@ export const facultyImportConfig: ImportConfig<Faculty> = {
       'Phone': '+1-555-1002',
       'Department Code': 'EE',
       'Specialization': 'Digital Signal Processing',
-      'Active Status': 'true'
+      'Office Number': 'EE-105',
+      'Office Hours': 'Tue-Thu 14:00-16:00'
     },
     {
+      'Staff ID': 'FAC003',
       'First Name': 'Robert',
       'Last Name': 'Johnson',
       'Title': 'Dr.',
@@ -425,7 +438,8 @@ export const facultyImportConfig: ImportConfig<Faculty> = {
       'Phone': '+1-555-1003',
       'Department Code': 'ME',
       'Specialization': 'Thermodynamics',
-      'Active Status': 'true'
+      'Office Number': 'ME-301',
+      'Office Hours': 'Mon-Fri 09:00-11:00'
     }
   ]
 };
