@@ -1,18 +1,34 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Program, Course } from '@/types/database';
 import { BookOpen, User, Mail, Phone, Calendar, Hash, MapPin, Award, CreditCard, FileText, AlertCircle, Globe, Info, X } from 'lucide-react';
+import { validateStudentForm, ValidationError, getFieldError, hasFieldError } from '@/utils/formValidation';
+import FieldError, { InputField } from '@/components/common/FieldError';
 
 interface StudentFormProps {
   formData: any;
   setFormData: (data: any) => void;
   programs: Program[];
   courses?: Course[];
+  onValidationChange?: (isValid: boolean, errors: ValidationError[]) => void;
 }
 
-export default function StudentForm({ formData, setFormData, programs, courses = [] }: StudentFormProps) {
+export default function StudentForm({ formData, setFormData, programs, courses = [], onValidationChange }: StudentFormProps) {
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [selectedCourses, setSelectedCourses] = useState<string[]>(formData.enrolledCourses || []);
   const [completedCredits, setCompletedCredits] = useState(0);
+
+  // Memoize the validation change callback to prevent unnecessary re-renders
+  const handleValidationChange = useCallback((isValid: boolean, errors: ValidationError[]) => {
+    onValidationChange?.(isValid, errors);
+  }, [onValidationChange]);
+
+  // Validate form whenever formData changes
+  useEffect(() => {
+    const validation = validateStudentForm(formData);
+    setValidationErrors(validation.errors);
+    handleValidationChange(validation.isValid, validation.errors);
+  }, [formData, handleValidationChange]);
 
   // Debug logging for semester changes
   useEffect(() => {
@@ -109,20 +125,22 @@ useEffect(() => {
         
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-                <Hash className="w-4 h-4 text-gray-400 inline-block" />
-                Student ID
-              </label>
+            <InputField 
+              label="Student ID" 
+              required 
+              error={getFieldError(validationErrors, 'studentId')}
+            >
               <input
                 type="text"
                 value={formData.studentId || ''}
                 onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError(validationErrors, 'studentId') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 placeholder="e.g., 21001234"
                 required
               />
-            </div>
+            </InputField>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
                 <Calendar className="w-4 h-4 text-gray-400 inline-block" />
@@ -138,17 +156,22 @@ useEffect(() => {
           </div>
           
           <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+            <InputField 
+              label="First Name" 
+              required 
+              error={getFieldError(validationErrors, 'firstName')}
+            >
               <input
                 type="text"
                 value={formData.firstName || ''}
                 onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError(validationErrors, 'firstName') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 placeholder="John"
                 required
               />
-            </div>
+            </InputField>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Middle Name</label>
               <input
@@ -159,17 +182,22 @@ useEffect(() => {
                 placeholder="Michael"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+            <InputField 
+              label="Last Name" 
+              required 
+              error={getFieldError(validationErrors, 'lastName')}
+            >
               <input
                 type="text"
                 value={formData.lastName || ''}
                 onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError(validationErrors, 'lastName') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 placeholder="Doe"
                 required
               />
-            </div>
+            </InputField>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

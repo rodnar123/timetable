@@ -1,11 +1,15 @@
 import React from 'react';
 import { Department } from '@/types/database';
 import { GraduationCap, Hash, Building2, Clock, Award, Users, CreditCard, FileText, BookOpen, Globe } from 'lucide-react';
+import { useFormValidation } from '@/hooks/useFormValidation';
+import { validateProgramForm, ValidationError } from '@/utils/formValidation';
+import { InputField } from '@/components/common/FieldError';
 
 interface ProgramFormProps {
   formData: any;
   setFormData: (data: any) => void;
   departments: Department[];
+  onValidationChange?: (isValid: boolean, errors: ValidationError[]) => void;
 }
 
 const degreeTypes = {
@@ -23,7 +27,12 @@ const degreeTypes = {
   ]
 };
 
-export default function ProgramForm({ formData, setFormData, departments }: ProgramFormProps) {
+export default function ProgramForm({ formData, setFormData, departments, onValidationChange }: ProgramFormProps) {
+  const { hasFieldError, getFieldError } = useFormValidation({ 
+    validateFn: validateProgramForm, 
+    formData,
+    onValidationChange 
+  });
   const handleDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const duration = e.target.value ? parseFloat(e.target.value) : null;
     setFormData({ ...formData, duration });
@@ -63,36 +72,41 @@ export default function ProgramForm({ formData, setFormData, departments }: Prog
         
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-                <Hash className="w-4 h-4 text-gray-400" />
-                Program Code
-              </label>
+            <InputField 
+              label="Program Code" 
+              required 
+              error={getFieldError('code')}
+            >
               <input
                 type="text"
                 value={formData.code || ''}
                 onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('code') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 placeholder="e.g., BCS"
                 required
               />
               <p className="text-xs text-gray-500 mt-1">
                 Short code for the program (3-10 characters)
               </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Program Name
-              </label>
+            </InputField>
+            <InputField 
+              label="Program Name" 
+              required 
+              error={getFieldError('name')}
+            >
               <input
                 type="text"
                 value={formData.name || ''}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('name') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 placeholder="e.g., Bachelor of Computer Science"
                 required
               />
-            </div>
+            </InputField>
           </div>
         </div>
       </div>
@@ -103,15 +117,17 @@ export default function ProgramForm({ formData, setFormData, departments }: Prog
         
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-                <Building2 className="w-4 h-4 text-gray-400" />
-                Department
-              </label>
+            <InputField 
+              label="Department" 
+              required 
+              error={getFieldError('departmentId')}
+            >
               <select
                 value={formData.departmentId || ''}
                 onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('departmentId') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 required
               >
                 <option value="">Select Department</option>
@@ -119,41 +135,48 @@ export default function ProgramForm({ formData, setFormData, departments }: Prog
                   <option key={dept.id} value={dept.id}>{dept.name}</option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-                <Award className="w-4 h-4 text-gray-400" />
-                Level
-              </label>
+            </InputField>
+            <InputField 
+              label="Level" 
+              required 
+              error={getFieldError('level')}
+            >
               <select
-                value={formData.level || 'undergraduate'}
+                value={formData.level || ''}
                 onChange={(e) => setFormData({ ...formData, level: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('level') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 required
               >
+                <option value="">Select Level</option>
                 <option value="undergraduate">Undergraduate</option>
                 <option value="postgraduate">Postgraduate</option>
               </select>
-            </div>
+            </InputField>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Degree Type
-              </label>
+            <InputField 
+              label="Degree Type" 
+              required 
+              error={getFieldError('degreeType')}
+            >
               <select
                 value={formData.degreeType || ''}
                 onChange={(e) => setFormData({ ...formData, degreeType: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('degreeType') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 disabled={!formData.level}
+                required
               >
                 <option value="">Select Degree Type</option>
                 {availableDegreeTypes.map(type => (
                   <option key={type.value} value={type.value}>{type.label}</option>
                 ))}
               </select>
-            </div>
+            </InputField>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Mode of Study
@@ -172,23 +195,25 @@ export default function ProgramForm({ formData, setFormData, departments }: Prog
           </div>
 
           <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-                <Clock className="w-4 h-4 text-gray-400" />
-                Duration (years)
-              </label>
+            <InputField 
+              label="Duration (years)" 
+              required 
+              error={getFieldError('duration')}
+            >
               <input
                 type="number"
                 value={formData.duration ?? ''}
                 onChange={handleDurationChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('duration') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 placeholder="e.g., 4"
                 min="0.5"
                 max="8"
                 step="0.5"
                 required
               />
-            </div>
+            </InputField>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
                 <CreditCard className="w-4 h-4 text-gray-400" />

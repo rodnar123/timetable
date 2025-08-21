@@ -1,7 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Grid, List, BookOpen, Clock, Users, Info, Tag } from 'lucide-react';
+import { Plus, Search, Grid, List, BookOpen, Clock, Users, Info, Tag, Upload } from 'lucide-react';
 import { Course, Department, Program, ModalType } from '@/types/database';
+import BulkImportComponent from '@/components/common/BulkImportComponent';
+import { courseImportConfig } from '@/utils/importConfigs';
 
 interface CoursesProps {
   courses: Course[];
@@ -9,6 +11,7 @@ interface CoursesProps {
   programs: Program[];
   openModal: (type: ModalType, item?: any) => void;
   handleDelete: (type: string, id: string) => void;
+  handleBulkImport?: (courses: Partial<Course>[]) => void;
   selectedView: 'grid' | 'list';
   setSelectedView: React.Dispatch<React.SetStateAction<'grid' | 'list'>>;
 }
@@ -19,6 +22,7 @@ export default function Courses({
   programs,
   openModal,
   handleDelete,
+  handleBulkImport,
   selectedView,
   setSelectedView
 }: CoursesProps) {
@@ -27,6 +31,7 @@ export default function Courses({
   const [selectedProgram, setSelectedProgram] = React.useState('all');
   const [selectedType, setSelectedType] = React.useState<'all' | 'core' | 'elective'>('all');
   const [expandedDescriptions, setExpandedDescriptions] = React.useState<Set<string>>(new Set());
+  const [showImportModal, setShowImportModal] = React.useState(false);
 
   // Toggle description expansion
   const toggleDescription = (courseId: string) => {
@@ -69,13 +74,22 @@ export default function Courses({
     >
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-gray-800">Courses</h2>
-        <button
-          onClick={() => openModal('course')}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Add Course
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            Bulk Import
+          </button>
+          <button
+            onClick={() => openModal('course')}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Course
+          </button>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -371,6 +385,21 @@ export default function Courses({
             </div>
           )}
         </div>
+      )}
+
+      {/* Bulk Import Modal */}
+      {showImportModal && (
+        <BulkImportComponent
+          config={courseImportConfig}
+          existingData={{ courses, departments }}
+          onImport={(importedCourses) => {
+            if (handleBulkImport) {
+              handleBulkImport(importedCourses);
+            }
+            setShowImportModal(false);
+          }}
+          onClose={() => setShowImportModal(false)}
+        />
       )}
     </motion.div>
   );

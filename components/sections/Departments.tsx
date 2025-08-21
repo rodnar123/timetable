@@ -1,7 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Building2, Edit, Trash2, Search, Grid, List, Users, GraduationCap, Award, MapPin, Calendar, Phone, Mail, Globe, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Building2, Edit, Trash2, Search, Grid, List, Users, GraduationCap, Award, MapPin, Calendar, Phone, Mail, Globe, Info, ChevronDown, ChevronUp, Upload } from 'lucide-react';
 import { Department, Program, Faculty, ModalType } from '@/types/database';
+import BulkImportComponent from '@/components/common/BulkImportComponent';
+import { departmentImportConfig } from '@/utils/importConfigs';
 
 interface DepartmentsProps {
   departments: Department[];
@@ -9,6 +11,7 @@ interface DepartmentsProps {
   faculty: Faculty[];
   openModal: (type: ModalType, item?: any) => void;
   handleDelete: (type: string, id: string) => void;
+  handleBulkImport?: (departments: Partial<Department>[]) => void;
   selectedView: 'grid' | 'list';
   setSelectedView: React.Dispatch<React.SetStateAction<'grid' | 'list'>>;
 }
@@ -19,6 +22,7 @@ export default function Departments({
   faculty,
   openModal,
   handleDelete,
+  handleBulkImport,
   selectedView,
   setSelectedView
 }: DepartmentsProps) {
@@ -26,6 +30,7 @@ export default function Departments({
   const [searchTerm, setSearchTerm] = React.useState('');
   const [expandedDescriptions, setExpandedDescriptions] = React.useState<Set<string>>(new Set());
   const [expandedCards, setExpandedCards] = React.useState<Set<string>>(new Set());
+  const [showImportModal, setShowImportModal] = React.useState(false);
 
   // Toggle description expansion
   const toggleDescription = (deptId: string) => {
@@ -89,13 +94,22 @@ export default function Departments({
     >
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-gray-800">Departments</h2>
-        <button
-          onClick={() => openModal('department')}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Add Department
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            Bulk Import
+          </button>
+          <button
+            onClick={() => openModal('department')}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Department
+          </button>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -455,6 +469,21 @@ export default function Departments({
             </div>
           </div>
         </motion.div>
+      )}
+
+      {/* Bulk Import Modal */}
+      {showImportModal && (
+        <BulkImportComponent
+          config={departmentImportConfig}
+          existingData={departments}
+          onImport={(importedDepartments) => {
+            if (handleBulkImport) {
+              handleBulkImport(importedDepartments);
+            }
+            setShowImportModal(false);
+          }}
+          onClose={() => setShowImportModal(false)}
+        />
       )}
     </motion.div>
   );

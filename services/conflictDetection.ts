@@ -10,7 +10,7 @@ export interface UniversalTimeSlotData {
   endTime: string;
   academicYear: string;
   semester: number | string;
-  yearLevel: string;
+  yearLevel: number;
   
   // Resource allocation
   facultyId?: string;
@@ -166,54 +166,116 @@ export class UniversalConflictDetector {
       
       // Check for time overlap
       if (start < existingEnd && end > existingStart) {
-        // Faculty conflict - critical for all operations
+        // CRITICAL: Faculty conflict - No faculty can be double-booked
         if (slotData.facultyId && slotData.facultyId === existingSlot.facultyId) {
-          // Check if existing slot is part of a joint session or split class
+          const facultyName = this.faculty.find(f => f.id === slotData.facultyId);
           const conflictContext = this.getConflictContext(existingSlot);
+          const courseName = this.getCourseName(existingSlot.courseId);
+          const facultyDisplayName = facultyName ? `${facultyName.firstName} ${facultyName.lastName}` : 'Faculty member';
+          
           conflicts.push({
             type: 'faculty',
             severity: 'error',
-            message: `Faculty member is already scheduled for ${conflictContext} from ${existingSlot.startTime} to ${existingSlot.endTime}`,
+            message: `❌ ${facultyDisplayName} is already scheduled for ${conflictContext} - "${courseName}" from ${existingSlot.startTime} to ${existingSlot.endTime}`,
             conflictingSlot: existingSlot
           });
         }
 
-        // Room conflict - critical for all operations
+        // CRITICAL: Room conflict - No room can be double-booked  
         if (slotData.roomId && slotData.roomId === existingSlot.roomId) {
+          const roomName = this.rooms.find(r => r.id === slotData.roomId);
           const conflictContext = this.getConflictContext(existingSlot);
+          const courseName = this.getCourseName(existingSlot.courseId);
+          const roomDisplayName = roomName ? roomName.name : 'Room';
+          
           conflicts.push({
             type: 'room',
             severity: 'error',
-            message: `Room is already booked for ${conflictContext} from ${existingSlot.startTime} to ${existingSlot.endTime}`,
+            message: `❌ ${roomDisplayName} is already booked for ${conflictContext} - "${courseName}" from ${existingSlot.startTime} to ${existingSlot.endTime}`,
             conflictingSlot: existingSlot
           });
         }
 
-        // Student/Course conflict - check year level and course
+        // ENHANCED: Student/Course conflict - Check year level and course with context
         if (slotData.courseId === existingSlot.courseId && 
-            String(slotData.yearLevel) === String(existingSlot.yearLevel)) {
-          conflicts.push({
-            type: 'course',
-            severity: 'error',
-            message: `Year ${slotData.yearLevel} students already have this course scheduled from ${existingSlot.startTime} to ${existingSlot.endTime}`,
-            conflictingSlot: existingSlot
-          });
+            slotData.yearLevel === existingSlot.yearLevel) {
+          
+          // If existing is a split class, it might be okay if we're adding another split group
+          if (existingSlot.groupType === GroupType.Split) {
+            conflicts.push({
+              type: 'course',
+              severity: 'warning',
+              message: `Year ${slotData.yearLevel} students already have "${this.getCourseName(slotData.courseId)}" as a split class. Adding regular class may create conflicts.`,
+              conflictingSlot: existingSlot
+            });
+          } else {
+            conflicts.push({
+              type: 'course',
+              severity: 'error',
+              message: `Year ${slotData.yearLevel} students already have "${this.getCourseName(slotData.courseId)}" scheduled from ${existingSlot.startTime} to ${existingSlot.endTime}`,
+              conflictingSlot: existingSlot
+            });
+          }
         }
 
-        // Same year level, different courses in same department - potential student conflict
-        if (String(slotData.yearLevel) === String(existingSlot.yearLevel) && 
+        // ENHANCED: Student availability conflicts with better context
+        if (slotData.yearLevel === existingSlot.yearLevel && 
             slotData.courseId !== existingSlot.courseId &&
-            slotData.departmentId === existingSlot.departmentId &&
-            // Don't flag if existing is split (students are divided) or joint (intentional)
-            existingSlot.groupType !== GroupType.Split &&
-            existingSlot.groupType !== GroupType.Joint) {
+            slotData.departmentId === existingSlot.departmentId) {
+          
+          // Different handling based on existing slot type
+          if (existingSlot.groupType === GroupType.Joint) {
+            conflicts.push({
+              type: 'course',
+              severity: 'error',
+              message: `Year ${slotData.yearLevel} students are unavailable - they have a joint session for "${this.getCourseName(existingSlot.courseId)}" scheduled`,
+              conflictingSlot: existingSlot
+            });
+          } else if (existingSlot.groupType === GroupType.Split) {
+            conflicts.push({
+              type: 'course',
+              severity: 'warning',
+              message: `Some Year ${slotData.yearLevel} students may be unavailable - they have a split class for "${this.getCourseName(existingSlot.courseId)}" scheduled`,
+              conflictingSlot: existingSlot
+            });
+          } else {
+            // Regular class
+            conflicts.push({
+              type: 'course',
+              severity: 'error',
+              message: `Year ${slotData.yearLevel} students are unavailable - they have "${this.getCourseName(existingSlot.courseId)}" scheduled at this time`,
+              conflictingSlot: existingSlot
+            });
+          }
+        }
+
+        // ADDITIONAL: Cross-department conflicts for interdisciplinary programs
+        if (slotData.yearLevel === existingSlot.yearLevel && 
+            slotData.courseId !== existingSlot.courseId &&
+            slotData.departmentId !== existingSlot.departmentId) {
+          
           conflicts.push({
             type: 'course',
             severity: 'warning',
-            message: `Year ${slotData.yearLevel} students may have a scheduling conflict with another course at this time`,
+            message: `Potential conflict with Year ${slotData.yearLevel} interdisciplinary students who may be enrolled in courses from both departments`,
             conflictingSlot: existingSlot
           });
         }
+      }
+      
+      // ADDITIONAL: Check for exact duplicate slots
+      if (existingSlot.startTime === slotData.startTime && 
+          existingSlot.endTime === slotData.endTime &&
+          existingSlot.facultyId === slotData.facultyId &&
+          existingSlot.roomId === slotData.roomId &&
+          existingSlot.courseId === slotData.courseId &&
+          existingSlot.yearLevel === slotData.yearLevel) {
+        conflicts.push({
+          type: 'course',
+          severity: 'error',
+          message: `Duplicate time slot detected - This exact combination already exists for Year ${slotData.yearLevel}`,
+          conflictingSlot: existingSlot
+        });
       }
     }
 
@@ -233,60 +295,125 @@ export class UniversalConflictDetector {
       const existingEnd = new Date(`1970/01/01 ${existingSlot.endTime}`).getTime();
       
       if (start < existingEnd && end > existingStart) {
-        // Skip if this is the same joint session group
+        // Skip if this is the same joint session group being edited
         if (slotData.groupId && existingSlot.groupId === slotData.groupId && 
             existingSlot.groupType === GroupType.Joint) {
           continue;
         }
 
-        // Faculty conflict - even more critical for joint sessions
+        // CRITICAL: Faculty conflict - Joint sessions must have exclusive faculty time
         if (slotData.facultyId && slotData.facultyId === existingSlot.facultyId) {
+          const facultyName = this.faculty.find(f => f.id === slotData.facultyId);
           const conflictContext = this.getConflictContext(existingSlot);
+          const facultyDisplayName = facultyName ? `${facultyName.firstName} ${facultyName.lastName}` : 'Faculty member';
+          
           conflicts.push({
             type: 'faculty',
             severity: 'error',
-            message: `Faculty member is already scheduled for ${conflictContext}. Joint sessions require dedicated faculty time.`,
+            message: `❌ ${facultyDisplayName} is already scheduled for ${conflictContext}. Joint sessions require dedicated faculty time.`,
             conflictingSlot: existingSlot
           });
         }
 
-        // Room conflict - joint sessions need exclusive room access
+        // CRITICAL: Room conflict - Joint sessions need exclusive room access
         if (slotData.roomId && slotData.roomId === existingSlot.roomId) {
+          const roomName = this.rooms.find(r => r.id === slotData.roomId);
           const conflictContext = this.getConflictContext(existingSlot);
+          const roomDisplayName = roomName ? roomName.name : 'Room';
+          
           conflicts.push({
             type: 'room',
             severity: 'error',
-            message: `Room is already booked for ${conflictContext}. Joint sessions require exclusive room access.`,
+            message: `❌ ${roomDisplayName} is already booked for ${conflictContext}. Joint sessions require exclusive room access.`,
             conflictingSlot: existingSlot
           });
         }
 
-        // Student conflicts for each course in the joint session
-        if (slotData.jointCourses) {
+        // ENHANCED: Student conflicts for each course in the joint session
+        if (slotData.jointCourses && slotData.jointCourses.length > 0) {
           for (const courseId of slotData.jointCourses) {
+            // Check if any course in joint session conflicts with existing course
             if (courseId === existingSlot.courseId && 
-                String(slotData.yearLevel) === String(existingSlot.yearLevel)) {
+                slotData.yearLevel === existingSlot.yearLevel) {
               conflicts.push({
                 type: 'course',
                 severity: 'error',
-                message: `Year ${slotData.yearLevel} students already have this course scheduled. Cannot include in joint session.`,
+                message: `Year ${slotData.yearLevel} students already have "${this.getCourseName(courseId)}" scheduled. Cannot include in joint session.`,
                 conflictingSlot: existingSlot
               });
             }
           }
         }
 
-        // Check for student availability conflicts across the year level
-        if (String(slotData.yearLevel) === String(existingSlot.yearLevel) &&
-            slotData.departmentId === existingSlot.departmentId &&
-            existingSlot.groupType !== GroupType.Split) {
+        // CRITICAL: Student availability conflicts - Must check ALL existing commitments
+        // Joint sessions require ALL students to be free
+        if (slotData.yearLevel === existingSlot.yearLevel &&
+            slotData.departmentId === existingSlot.departmentId) {
+          
+          // If existing slot is a split class, only half the students are busy
+          if (existingSlot.groupType === GroupType.Split) {
+            conflicts.push({
+              type: 'course',
+              severity: 'warning',
+              message: `Year ${slotData.yearLevel} students are partially occupied with a split class. Verify student availability for joint session.`,
+              conflictingSlot: existingSlot
+            });
+          } 
+          // If existing slot is regular or another joint session, all students are busy
+          else if (existingSlot.groupType !== GroupType.Joint || 
+                   existingSlot.groupId !== slotData.groupId) {
+            conflicts.push({
+              type: 'course',
+              severity: 'error',
+              message: `Year ${slotData.yearLevel} students are not available - they have "${this.getCourseName(existingSlot.courseId)}" scheduled`,
+              conflictingSlot: existingSlot
+            });
+          }
+        }
+
+        // ENHANCED: Cross-department joint session conflicts
+        if (slotData.yearLevel === existingSlot.yearLevel &&
+            slotData.departmentId !== existingSlot.departmentId) {
+          // Check if students might be enrolled in both departments (interdisciplinary courses)
           conflicts.push({
             type: 'course',
-            severity: 'error',
-            message: `Year ${slotData.yearLevel} students are not available - they have another class scheduled`,
+            severity: 'warning',
+            message: `Potential conflict with Year ${slotData.yearLevel} interdisciplinary students who may be enrolled in both departments`,
             conflictingSlot: existingSlot
           });
         }
+      }
+    }
+
+    // ADDITIONAL: Validate joint session requirements
+    if (slotData.jointCourses && slotData.jointCourses.length < 2) {
+      conflicts.push({
+        type: 'course',
+        severity: 'error',
+        message: 'Joint sessions require at least 2 courses. Please add more courses.'
+      });
+    }
+
+    // ADDITIONAL: Check if courses are compatible for joint session
+    if (slotData.jointCourses && slotData.jointCourses.length >= 2) {
+      const courseDetails = slotData.jointCourses.map(id => this.courses.find(c => c.id === id)).filter(Boolean);
+      const yearLevels = new Set(courseDetails.map(c => c!.yearLevel));
+      const departments = new Set(courseDetails.map(c => c!.departmentId));
+      
+      if (yearLevels.size > 1) {
+        conflicts.push({
+          type: 'course',
+          severity: 'error',
+          message: 'All courses in joint session must be for the same year level'
+        });
+      }
+      
+      if (departments.size > 1) {
+        conflicts.push({
+          type: 'course',
+          severity: 'warning',
+          message: 'Joint session includes courses from different departments. Verify compatibility.'
+        });
       }
     }
 
@@ -299,15 +426,24 @@ export class UniversalConflictDetector {
   ): ConflictDetail[] {
     const conflicts: ConflictDetail[] = [];
     
-    if (!slotData.splitGroups) {
+    if (!slotData.splitGroups || slotData.splitGroups.length === 0) {
       return [{
         type: 'course',
         severity: 'error',
-        message: 'Split class groups not defined'
+        message: 'Split class groups not defined. Please add at least 2 groups.'
       }];
     }
 
-    // Check each split group for conflicts
+    // VALIDATION: Split classes should have at least 2 groups
+    if (slotData.splitGroups.length < 2) {
+      conflicts.push({
+        type: 'course',
+        severity: 'error',
+        message: 'Split classes require at least 2 groups to divide students effectively.'
+      });
+    }
+
+    // ENHANCED: Check each split group for comprehensive conflicts
     for (let i = 0; i < slotData.splitGroups.length; i++) {
       const group = slotData.splitGroups[i];
       const groupStartTime = group.startTime || slotData.startTime;
@@ -315,58 +451,127 @@ export class UniversalConflictDetector {
       const groupFacultyId = group.facultyId || slotData.facultyId;
       const groupRoomId = group.roomId || slotData.roomId;
       
+      // VALIDATION: Each group must have a room assigned
+      if (!groupRoomId) {
+        conflicts.push({
+          type: 'room',
+          severity: 'error',
+          message: `${group.name}: Room not assigned. Each split group requires a specific room.`
+        });
+        continue; // Skip further checks for this group if no room
+      }
+      
       const start = new Date(`1970/01/01 ${groupStartTime}`).getTime();
       const end = new Date(`1970/01/01 ${groupEndTime}`).getTime();
 
+      // CRITICAL: Check conflicts with all existing time slots
       for (const existingSlot of relevantSlots) {
         const existingStart = new Date(`1970/01/01 ${existingSlot.startTime}`).getTime();
         const existingEnd = new Date(`1970/01/01 ${existingSlot.endTime}`).getTime();
         
         if (start < existingEnd && end > existingStart) {
-          // Skip if this is the same split class group
+          // Skip if this is the same split class group being edited
           if (slotData.groupId && existingSlot.groupId === slotData.groupId && 
               existingSlot.groupType === GroupType.Split) {
             continue;
           }
 
-          // Faculty conflict for this specific group
+          // CRITICAL: Faculty conflict - Each split group faculty must be available
           if (groupFacultyId && groupFacultyId === existingSlot.facultyId) {
+            const facultyName = this.faculty.find(f => f.id === groupFacultyId);
             const conflictContext = this.getConflictContext(existingSlot);
+            const facultyDisplayName = facultyName ? `${facultyName.firstName} ${facultyName.lastName}` : 'Faculty member';
+            
             conflicts.push({
               type: 'faculty',
               severity: 'error',
-              message: `${group.name}: Faculty member is already scheduled for ${conflictContext}`,
+              message: `❌ ${group.name}: ${facultyDisplayName} is already scheduled for ${conflictContext} - "${this.getCourseName(existingSlot.courseId)}"`,
               conflictingSlot: existingSlot
             });
           }
 
-          // Room conflict for this specific group
+          // CRITICAL: Room conflict - Each split group room must be available  
           if (groupRoomId && groupRoomId === existingSlot.roomId) {
+            const roomName = this.rooms.find(r => r.id === groupRoomId);
             const conflictContext = this.getConflictContext(existingSlot);
+            const roomDisplayName = roomName ? roomName.name : 'Room';
+            
             conflicts.push({
               type: 'room',
               severity: 'error',
-              message: `${group.name}: Room is already booked for ${conflictContext}`,
+              message: `❌ ${group.name}: ${roomDisplayName} is already booked for ${conflictContext} - "${this.getCourseName(existingSlot.courseId)}"`,
               conflictingSlot: existingSlot
             });
           }
 
-          // Course conflict - split classes of the same course should not conflict with regular classes
+          // ENHANCED: Course conflict detection for split classes
           if (slotData.courseId === existingSlot.courseId && 
-              String(slotData.yearLevel) === String(existingSlot.yearLevel) &&
-              existingSlot.groupType !== GroupType.Split) {
-            conflicts.push({
-              type: 'course',
-              severity: 'error',
-              message: `${group.name}: This course is already scheduled for Year ${slotData.yearLevel} students`,
-              conflictingSlot: existingSlot
-            });
+              slotData.yearLevel === existingSlot.yearLevel) {
+            
+            // If existing is also a split class of the same course, it's okay (same split session)
+            if (existingSlot.groupType === GroupType.Split && 
+                existingSlot.groupId === slotData.groupId) {
+              continue;
+            }
+            // If existing is regular class of same course, it conflicts
+            else if (existingSlot.groupType !== GroupType.Split) {
+              conflicts.push({
+                type: 'course',
+                severity: 'error',
+                message: `${group.name}: Cannot split "${this.getCourseName(slotData.courseId)}" - Year ${slotData.yearLevel} students already have this course as a regular class`,
+                conflictingSlot: existingSlot
+              });
+            }
+            // If existing is different split class of same course, warn about confusion
+            else {
+              conflicts.push({
+                type: 'course',
+                severity: 'warning',
+                message: `${group.name}: Another split class session exists for the same course. Verify this is intentional.`,
+                conflictingSlot: existingSlot
+              });
+            }
+          }
+
+          // ENHANCED: Student availability for split classes
+          // Split classes divide students, so check for other commitments more carefully
+          if (slotData.yearLevel === existingSlot.yearLevel &&
+              slotData.departmentId === existingSlot.departmentId &&
+              slotData.courseId !== existingSlot.courseId) {
+            
+            // If existing is joint session, all students are occupied
+            if (existingSlot.groupType === GroupType.Joint) {
+              conflicts.push({
+                type: 'course',
+                severity: 'error',
+                message: `${group.name}: Year ${slotData.yearLevel} students are unavailable - they have a joint session scheduled`,
+                conflictingSlot: existingSlot
+              });
+            }
+            // If existing is regular class, all students are occupied
+            else if (existingSlot.groupType !== GroupType.Split) {
+              conflicts.push({
+                type: 'course',
+                severity: 'error',
+                message: `${group.name}: Year ${slotData.yearLevel} students are unavailable - they have "${this.getCourseName(existingSlot.courseId)}" scheduled`,
+                conflictingSlot: existingSlot
+              });
+            }
+            // If existing is another split class, warn about potential overlap
+            else {
+              conflicts.push({
+                type: 'course',
+                severity: 'warning',
+                message: `${group.name}: Some Year ${slotData.yearLevel} students may be occupied with another split class. Verify student group assignments don't overlap.`,
+                conflictingSlot: existingSlot
+              });
+            }
           }
         }
       }
     }
 
-    // Check for conflicts between split groups within the same split class
+    // ENHANCED: Check for conflicts between split groups within the same split class
     for (let i = 0; i < slotData.splitGroups.length; i++) {
       for (let j = i + 1; j < slotData.splitGroups.length; j++) {
         const group1 = slotData.splitGroups[i];
@@ -379,7 +584,7 @@ export class UniversalConflictDetector {
         
         // Check if times overlap
         if (start1 < end2 && end1 > start2) {
-          // Faculty conflict between groups
+          // CRITICAL: Faculty conflict between groups in same split class
           const faculty1 = group1.facultyId || slotData.facultyId;
           const faculty2 = group2.facultyId || slotData.facultyId;
           
@@ -387,11 +592,11 @@ export class UniversalConflictDetector {
             conflicts.push({
               type: 'faculty',
               severity: 'error',
-              message: `Faculty member cannot teach both ${group1.name} and ${group2.name} at overlapping times`
+              message: `Faculty member cannot teach both ${group1.name} and ${group2.name} at overlapping times within the same split class`
             });
           }
           
-          // Room conflict between groups
+          // CRITICAL: Room conflict between groups in same split class
           const room1 = group1.roomId || slotData.roomId;
           const room2 = group2.roomId || slotData.roomId;
           
@@ -403,6 +608,42 @@ export class UniversalConflictDetector {
             });
           }
         }
+      }
+    }
+
+    // ADDITIONAL: Validate split group configurations
+    const roomIds = new Set();
+    const facultyIds = new Set();
+    
+    for (const group of slotData.splitGroups) {
+      const roomId = group.roomId || slotData.roomId;
+      const facultyId = group.facultyId || slotData.facultyId;
+      
+      // Check for duplicate room assignments at the same time
+      if (roomId) {
+        if (roomIds.has(roomId)) {
+          // Only error if groups have overlapping times
+          const hasOverlappingTimes = slotData.splitGroups.some((otherGroup, idx) => {
+            if (otherGroup === group) return false;
+            const groupTime = group.startTime || slotData.startTime;
+            const otherTime = otherGroup.startTime || slotData.startTime;
+            return groupTime === otherTime; // Simple same-time check
+          });
+          
+          if (hasOverlappingTimes) {
+            conflicts.push({
+              type: 'room',
+              severity: 'warning',
+              message: `Multiple groups are assigned to the same room at the same time. This is only valid if they have different time slots.`
+            });
+          }
+        }
+        roomIds.add(roomId);
+      }
+      
+      // Track faculty assignments for optimization suggestions
+      if (facultyId) {
+        facultyIds.add(facultyId);
       }
     }
 
@@ -444,6 +685,11 @@ export class UniversalConflictDetector {
       return 'a split class';
     }
     return 'a regular class';
+  }
+
+  private getCourseName(courseId: string): string {
+    const course = this.courses.find(c => c.id === courseId);
+    return course ? course.name : courseId;
   }
 
   private generateSuggestions(
@@ -508,7 +754,7 @@ export const convertToUniversalData = {
     endTime: formData.endTime,
     academicYear: formData.academicYear,
     semester: formData.semester,
-    yearLevel: formData.yearLevel,
+    yearLevel: typeof formData.yearLevel === 'string' ? parseInt(formData.yearLevel) : formData.yearLevel,
     facultyId: formData.facultyId,
     roomId: formData.roomId,
     courseId: formData.courseId,
@@ -524,7 +770,7 @@ export const convertToUniversalData = {
     endTime: formData.endTime,
     academicYear: formData.academicYear,
     semester: formData.semester,
-    yearLevel: formData.yearLevel,
+    yearLevel: typeof formData.yearLevel === 'string' ? parseInt(formData.yearLevel) : formData.yearLevel,
     facultyId: formData.facultyId,
     roomId: formData.roomId,
     departmentId: formData.departmentId,
@@ -542,7 +788,7 @@ export const convertToUniversalData = {
     endTime: formData.endTime,
     academicYear: formData.academicYear,
     semester: formData.semester,
-    yearLevel: formData.yearLevel,
+    yearLevel: typeof formData.yearLevel === 'string' ? parseInt(formData.yearLevel) : formData.yearLevel,
     courseId: formData.courseId,
     departmentId: formData.departmentId,
     groupType: GroupType.Split,

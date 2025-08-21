@@ -1,7 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Grid, List, GraduationCap, Award, Clock, Users, CreditCard, BookOpen, Globe, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Search, Grid, List, GraduationCap, Award, Clock, Users, CreditCard, BookOpen, Globe, Info, ChevronDown, ChevronUp, Upload } from 'lucide-react';
 import { Program, Department, ModalType } from '@/types/database';
+import BulkImportComponent from '@/components/common/BulkImportComponent';
+import { programImportConfig } from '@/utils/importConfigs';
 
 interface ProgramsProps {
   programs: Program[];
@@ -10,6 +12,7 @@ interface ProgramsProps {
   setSelectedDepartment: (dept: string) => void;
   openModal: (type: ModalType, item?: any) => void;
   handleDelete: (type: string, id: string) => void;
+  handleBulkImport?: (programs: Partial<Program>[]) => void;
   selectedView: 'grid' | 'list';
   setSelectedView: React.Dispatch<React.SetStateAction<'grid' | 'list'>>;
 }
@@ -21,6 +24,7 @@ export default function Programs({
   setSelectedDepartment,
   openModal,
   handleDelete,
+  handleBulkImport,
   selectedView,
   setSelectedView
 }: ProgramsProps) {
@@ -30,6 +34,7 @@ export default function Programs({
   const [selectedMode, setSelectedMode] = React.useState<string>('all');
   const [expandedDescriptions, setExpandedDescriptions] = React.useState<Set<string>>(new Set());
   const [expandedCards, setExpandedCards] = React.useState<Set<string>>(new Set());
+  const [showImportModal, setShowImportModal] = React.useState(false);
 
   // Toggle functions
   const toggleDescription = (programId: string) => {
@@ -133,13 +138,22 @@ export default function Programs({
     >
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-gray-800">Programs</h2>
-        <button
-          onClick={() => openModal('program')}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Add Program
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            Bulk Import
+          </button>
+          <button
+            onClick={() => openModal('program')}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Program
+          </button>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -529,6 +543,21 @@ export default function Programs({
             </div>
           </div>
         </motion.div>
+      )}
+
+      {/* Bulk Import Modal */}
+      {showImportModal && (
+        <BulkImportComponent
+          config={programImportConfig}
+          existingData={{ programs, departments }}
+          onImport={(importedPrograms) => {
+            if (handleBulkImport) {
+              handleBulkImport(importedPrograms);
+            }
+            setShowImportModal(false);
+          }}
+          onClose={() => setShowImportModal(false)}
+        />
       )}
     </motion.div>
   );

@@ -1,5 +1,6 @@
 // utils/conflictUtils.ts
-import { TimeSlot, GroupType } from '@/types/database';
+import { TimeSlot, GroupType, Faculty, Room, Course } from '@/types/database';
+import { UniversalConflictDetector, convertToUniversalData } from '@/services/conflictDetection';
 
 export interface ConflictCheckResult {
   hasConflicts: boolean;
@@ -15,8 +16,55 @@ export interface ConflictDetail {
   conflictingSlot?: TimeSlot;
 }
 
-// Main conflict checking function
+// Main conflict checking function - now uses the universal detector
 export const checkTimeSlotConflicts = (
+  newSlot: Partial<TimeSlot>,
+  existingSlots: TimeSlot[],
+  excludeSlotId?: string, // For updates, exclude the slot being edited
+  faculty: Faculty[] = [],
+  rooms: Room[] = [],
+  courses: Course[] = []
+): ConflictCheckResult => {
+  // Use the new universal conflict detector
+  const detector = new UniversalConflictDetector(existingSlots, faculty, rooms, courses);
+  
+  // Convert the old format to the new universal format
+  const universalData = convertToUniversalData.fromRegularTimeSlot({
+    ...newSlot,
+    id: excludeSlotId
+  });
+  
+  return detector.detectConflicts(universalData);
+};
+
+// Specialized function for joint sessions
+export const checkJointSessionConflicts = (
+  formData: any,
+  existingSlots: TimeSlot[],
+  faculty: Faculty[] = [],
+  rooms: Room[] = [],
+  courses: Course[] = []
+): ConflictCheckResult => {
+  const detector = new UniversalConflictDetector(existingSlots, faculty, rooms, courses);
+  const universalData = convertToUniversalData.fromJointSession(formData);
+  return detector.detectConflicts(universalData);
+};
+
+// Specialized function for split classes
+export const checkSplitClassConflicts = (
+  formData: any,
+  existingSlots: TimeSlot[],
+  faculty: Faculty[] = [],
+  rooms: Room[] = [],
+  courses: Course[] = []
+): ConflictCheckResult => {
+  const detector = new UniversalConflictDetector(existingSlots, faculty, rooms, courses);
+  const universalData = convertToUniversalData.fromSplitClass(formData);
+  return detector.detectConflicts(universalData);
+};
+
+// Legacy function for backward compatibility - keeping the old logic for now
+export const checkTimeSlotConflictsLegacy = (
   newSlot: Partial<TimeSlot>,
   existingSlots: TimeSlot[],
   excludeSlotId?: string // For updates, exclude the slot being edited

@@ -1,14 +1,23 @@
 import React from 'react';
 import { Department } from '@/types/database';
 import { FacultyFormData } from '@/types/forms';
+import { validateFacultyForm, ValidationError } from '@/utils/formValidation';
+import { useFormValidation } from '@/hooks/useFormValidation';
+import FieldError, { InputField } from '@/components/common/FieldError';
 
 interface FacultyFormProps {
   formData: FacultyFormData;
   setFormData: (data: FacultyFormData) => void;
   departments: Department[];
+  onValidationChange?: (isValid: boolean, errors: ValidationError[]) => void;
 }
 
-export default function FacultyForm({ formData, setFormData, departments }: FacultyFormProps) {
+export default function FacultyForm({ formData, setFormData, departments, onValidationChange }: FacultyFormProps) {
+  const { validationErrors, hasFieldError, getFieldError } = useFormValidation({
+    validateFn: validateFacultyForm,
+    formData,
+    onValidationChange
+  });
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-4">
@@ -27,48 +36,72 @@ export default function FacultyForm({ formData, setFormData, departments }: Facu
             <option value="Prof.">Prof.</option>
           </select>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+        <InputField 
+          label="First Name" 
+          required 
+          error={getFieldError('firstName')}
+        >
           <input
             type="text"
             value={formData.firstName || ''}
             onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              hasFieldError('firstName') ? 'border-red-300' : 'border-gray-300'
+            }`}
             placeholder="John"
+            required
           />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+        </InputField>
+        <InputField 
+          label="Last Name" 
+          required 
+          error={getFieldError('lastName')}
+        >
           <input
             type="text"
             value={formData.lastName || ''}
             onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              hasFieldError('lastName') ? 'border-red-300' : 'border-gray-300'
+            }`}
             placeholder="Smith"
+            required
           />
-        </div>
+        </InputField>
       </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Staff ID</label>
+      
+      <InputField 
+        label="Staff ID" 
+        required 
+        error={getFieldError('staffId')}
+      >
         <input
           type="text"
           value={formData.staffId || ''}
           onChange={(e) => setFormData({ ...formData, staffId: e.target.value })}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            hasFieldError('staffId') ? 'border-red-300' : 'border-gray-300'
+          }`}
           placeholder="e.g., FAC001"
+          required
         />
-      </div>
+      </InputField>
+      
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+        <InputField 
+          label="Email" 
+          error={getFieldError('email')}
+        >
           <input
             type="email"
             value={formData.email || ''}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              hasFieldError('email') ? 'border-red-300' : 'border-gray-300'
+            }`}
             placeholder="john.smith@pnguot.ac.pg"
           />
-        </div>
+        </InputField>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
           <input
@@ -80,19 +113,26 @@ export default function FacultyForm({ formData, setFormData, departments }: Facu
           />
         </div>
       </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+      
+      <InputField 
+        label="Department" 
+        required 
+        error={getFieldError('departmentId')}
+      >
         <select
           value={formData.departmentId || ''}
           onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            hasFieldError('departmentId') ? 'border-red-300' : 'border-gray-300'
+          }`}
+          required
         >
           <option value="">Select Department</option>
           {departments.map(dept => (
             <option key={dept.id} value={dept.id}>{dept.name}</option>
           ))}
         </select>
-      </div>
+      </InputField>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Office Number</label>

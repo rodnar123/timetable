@@ -1,25 +1,30 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Plus, User, Search, Grid, List, Users, Mail, Building2 } from 'lucide-react';
+import { Plus, User, Search, Grid, List, Users, Mail, Building2, Upload } from 'lucide-react';
 import { Faculty, Department, ModalType } from '@/types/database';
+import BulkImportComponent from '@/components/common/BulkImportComponent';
+import { facultyImportConfig } from '@/utils/importConfigs';
 
 interface FacultyProps {
   faculty: Faculty[];
   departments: Department[];
   openModal: (type: ModalType, item?: any) => void;
   handleDelete: (type: string, id: string) => void;
+  handleBulkImport?: (faculty: Partial<Faculty>[]) => void;
 }
 
 export default function FacultySection({
   faculty,
   departments,
   openModal,
-  handleDelete
+  handleDelete,
+  handleBulkImport
 }: FacultyProps) {
   // Local state for search, view, and department filter
   const [searchTerm, setSearchTerm] = React.useState('');
   const [selectedView, setSelectedView] = React.useState<'grid' | 'list'>('grid');
   const [selectedDepartment, setSelectedDepartment] = React.useState('all');
+  const [showImportModal, setShowImportModal] = React.useState(false);
 
   // Helper function to format faculty name
   const formatFacultyName = (member: Faculty) => {
@@ -53,13 +58,22 @@ export default function FacultySection({
     >
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-gray-800">Faculty Members</h2>
-        <button
-          onClick={() => openModal('faculty')}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Add Faculty
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            Bulk Import
+          </button>
+          <button
+            onClick={() => openModal('faculty')}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Faculty
+          </button>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -253,6 +267,21 @@ export default function FacultySection({
             </div>
           )}
         </div>
+      )}
+
+      {/* Bulk Import Modal */}
+      {showImportModal && (
+        <BulkImportComponent
+          config={facultyImportConfig}
+          existingData={{ faculty, departments }}
+          onImport={(importedFaculty) => {
+            if (handleBulkImport) {
+              handleBulkImport(importedFaculty);
+            }
+            setShowImportModal(false);
+          }}
+          onClose={() => setShowImportModal(false)}
+        />
       )}
     </motion.div>
   );

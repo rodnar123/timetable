@@ -1,13 +1,22 @@
 import React from 'react';
 import { Building2, Hash, User, MapPin, Calendar, FileText, Phone, Mail, Globe } from 'lucide-react';
 import { DepartmentFormData } from '@/types/forms';
+import { validateDepartmentForm, ValidationError } from '@/utils/formValidation';
+import { useFormValidation } from '@/hooks/useFormValidation';
+import FieldError, { InputField } from '@/components/common/FieldError';
 
 interface DepartmentFormProps {
   formData: DepartmentFormData;
   setFormData: (data: DepartmentFormData) => void;
+  onValidationChange?: (isValid: boolean, errors: ValidationError[]) => void;
 }
 
-export default function DepartmentForm({ formData, setFormData }: DepartmentFormProps) {
+export default function DepartmentForm({ formData, setFormData, onValidationChange }: DepartmentFormProps) {
+  const { validationErrors, hasFieldError, getFieldError } = useFormValidation({
+    validateFn: validateDepartmentForm,
+    formData,
+    onValidationChange
+  });
   const handleEstablishedYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const year = e.target.value ? parseInt(e.target.value) : undefined;
     setFormData({ ...formData, establishedYear: year });
@@ -24,52 +33,59 @@ export default function DepartmentForm({ formData, setFormData }: DepartmentForm
         
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-                <Hash className="w-4 h-4 text-gray-400" />
-                Department Code
-              </label>
+            <InputField 
+              label="Department Code" 
+              required 
+              error={getFieldError('code')}
+            >
               <input
                 type="text"
                 value={formData.code || ''}
                 onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('code') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 placeholder="e.g., CS"
                 required
               />
               <p className="text-xs text-gray-500 mt-1">
                 Short code for the department (2-5 characters)
               </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Department Name
-              </label>
+            </InputField>
+            <InputField 
+              label="Department Name" 
+              required 
+              error={getFieldError('name')}
+            >
               <input
                 type="text"
                 value={formData.name || ''}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('name') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 placeholder="e.g., Computer Science"
                 required
               />
-            </div>
+            </InputField>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-              <User className="w-4 h-4 text-gray-400" />
-              Department Head
-            </label>
+          <InputField 
+            label="Department Head" 
+            required 
+            error={getFieldError('head')}
+          >
             <input
               type="text"
               value={formData.head || ''}
               onChange={(e) => setFormData({ ...formData, head: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                hasFieldError('head') ? 'border-red-300' : 'border-gray-300'
+              }`}
               placeholder="e.g., Dr. John Smith"
               required
             />
-          </div>
+          </InputField>
         </div>
       </div>
 

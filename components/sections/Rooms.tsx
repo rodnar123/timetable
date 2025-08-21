@@ -1,18 +1,22 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Grid, List, Building2, Users, CheckCircle } from 'lucide-react';
+import { Plus, Search, Grid, List, Building2, Users, CheckCircle, Upload } from 'lucide-react';
 import { Room, ModalType } from '@/types/database';
+import BulkImportComponent from '@/components/common/BulkImportComponent';
+import { roomImportConfig } from '@/utils/importConfigs';
 
 interface RoomsProps {
   rooms: Room[];
   openModal: (type: ModalType, item?: any) => void;
   handleDelete: (type: string, id: string) => void;
+  handleBulkImport?: (rooms: Partial<Room>[]) => void;
 }
 
 export default function Rooms({
   rooms,
   openModal,
-  handleDelete
+  handleDelete,
+  handleBulkImport
 }: RoomsProps) {
   // Local state for search, view, and filters
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -20,6 +24,7 @@ export default function Rooms({
   const [selectedBuilding, setSelectedBuilding] = React.useState('all');
   const [selectedType, setSelectedType] = React.useState('all');
   const [selectedAvailability, setSelectedAvailability] = React.useState('all');
+  const [showImportModal, setShowImportModal] = React.useState(false);
 
   // Get unique buildings and types
   const buildings = Array.from(new Set(rooms.map(room => room.building).filter(Boolean)));
@@ -56,13 +61,22 @@ export default function Rooms({
     >
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-gray-800">Room Management</h2>
-        <button
-          onClick={() => openModal('room')}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Add Room
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            Bulk Import
+          </button>
+          <button
+            onClick={() => openModal('room')}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Room
+          </button>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -285,6 +299,21 @@ export default function Rooms({
             </div>
           )}
         </div>
+      )}
+
+      {/* Bulk Import Modal */}
+      {showImportModal && (
+        <BulkImportComponent
+          config={roomImportConfig}
+          existingData={rooms}
+          onImport={(importedRooms) => {
+            if (handleBulkImport) {
+              handleBulkImport(importedRooms);
+            }
+            setShowImportModal(false);
+          }}
+          onClose={() => setShowImportModal(false)}
+        />
       )}
     </motion.div>
   );

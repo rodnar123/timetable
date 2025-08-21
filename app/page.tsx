@@ -159,7 +159,7 @@ export default function PNGUnitechTimetableSystem() {
   const [db, setDb] = useState<TimetableDB | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // Start closed by default, will be set by useEffect
   const [showNotifications, setShowNotifications] = useState(false);
 
   // Data States
@@ -235,6 +235,29 @@ export default function PNGUnitechTimetableSystem() {
     };
 
     initDB();
+  }, []);
+
+  // Handle responsive sidebar behavior
+  useEffect(() => {
+    const handleResize = () => {
+      // Close sidebar on mobile, open on desktop by default
+      if (window.innerWidth < 1024) {
+        setSidebarOpen(false);
+      } else {
+        setSidebarOpen(true);
+      }
+      // Close notifications dropdown on resize
+      setShowNotifications(false);
+    };
+
+    // Set initial state
+    handleResize();
+
+    // Add event listener
+    window.addEventListener('resize', handleResize);
+
+    // Cleanup
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   // Load all data (memoized)
@@ -1660,7 +1683,7 @@ case 'student':
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Alert Component */}
       <Alert 
         show={alert.show}
@@ -1674,10 +1697,15 @@ case 'student':
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         menuItems={menuItems}
+        setSidebarOpen={setSidebarOpen}
       />
 
       {/* Main Content */}
-      <div className={`transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-4'}`}>
+      <div className={`
+        transition-all duration-300 ease-in-out
+        ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-4'}
+        ml-0
+      `}>
         {/* Header Component */}
         <Header
           sidebarOpen={sidebarOpen}
@@ -1688,7 +1716,7 @@ case 'student':
         />
 
         {/* Page Content */}
-        <main className="p-6">
+        <main className="p-3 sm:p-4 lg:p-6 min-h-screen bg-gray-50">
           {activeTab === 'dashboard' && (
             <Dashboard 
               departments={departments}

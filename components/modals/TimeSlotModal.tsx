@@ -103,7 +103,10 @@ const TimeSlotModal: React.FC<TimeSlotModalProps> = ({
       const result = checkTimeSlotConflicts(
         formData,
         existingSlots,
-        data?.id
+        data?.id,
+        faculty,
+        rooms,
+        courses
       );
       setConflictResult(result);
     }
@@ -116,7 +119,12 @@ const TimeSlotModal: React.FC<TimeSlotModalProps> = ({
     formData.courseId,
     formData.academicYear,
     formData.semester,
-    formData.yearLevel
+    formData.yearLevel,
+    existingSlots,
+    faculty,
+    rooms,
+    courses,
+    data?.id
   ]);
 
   // Update available slots when day or year level changes
@@ -289,8 +297,10 @@ const TimeSlotModal: React.FC<TimeSlotModalProps> = ({
               courses={courses}
               faculty={faculty}
               rooms={rooms}
+              timeSlots={existingSlots}
               academicYears={[selectedYear]}
               semesters={[selectedSemester]}
+              onConflictChange={setConflictResult}
             />
 
             {/* Real-time Conflict Display */}

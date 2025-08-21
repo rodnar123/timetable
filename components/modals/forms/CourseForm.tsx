@@ -1,13 +1,17 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Department, Program } from '@/types/database';
 import { CourseFormData } from '@/types/forms';
 import { BookOpen, Hash, Calendar, CreditCard, Palette, FileText, Tag } from 'lucide-react';
+import { validateCourseForm, ValidationError } from '@/utils/formValidation';
+import { useFormValidation } from '@/hooks/useFormValidation';
+import FieldError, { InputField } from '@/components/common/FieldError';
 
 interface CourseFormProps {
   formData: CourseFormData;
   setFormData: (data: CourseFormData) => void;
   departments: Department[];
   programs: Program[];
+  onValidationChange?: (isValid: boolean, errors: ValidationError[]) => void;
 }
 
 // Predefined color options for courses
@@ -22,7 +26,12 @@ const colorOptions = [
   { name: 'Gray', value: 'bg-gray-400' },
 ];
 
-export default function CourseForm({ formData, setFormData, departments, programs }: CourseFormProps) {
+export default function CourseForm({ formData, setFormData, departments, programs, onValidationChange }: CourseFormProps) {
+  const { validationErrors, hasFieldError, getFieldError } = useFormValidation({
+    validateFn: validateCourseForm,
+    formData,
+    onValidationChange
+  });
   // Ensure yearLevel and semester are always numbers, never null
   React.useEffect(() => {
     let needsUpdate = false;
@@ -97,31 +106,38 @@ export default function CourseForm({ formData, setFormData, departments, program
         
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-                <Hash className="w-4 h-4 text-gray-400" />
-                Course Code
-              </label>
+            <InputField 
+              label="Course Code" 
+              required 
+              error={getFieldError('code')}
+            >
               <input
                 type="text"
                 value={formData.code || ''}
                 onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('code') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 placeholder="e.g., CS101"
                 required
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Course Name</label>
+            </InputField>
+            <InputField 
+              label="Course Name" 
+              required 
+              error={getFieldError('name')}
+            >
               <input
                 type="text"
                 value={formData.name || ''}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('name') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 placeholder="e.g., Introduction to Programming"
                 required
               />
-            </div>
+            </InputField>
           </div>
 
           {/* Color Selection */}
@@ -153,12 +169,17 @@ export default function CourseForm({ formData, setFormData, departments, program
         
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+            <InputField 
+              label="Department" 
+              required 
+              error={getFieldError('departmentId')}
+            >
               <select
                 value={formData.departmentId || ''}
                 onChange={handleDepartmentChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('departmentId') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 required
               >
                 <option value="">Select Department</option>
@@ -166,18 +187,18 @@ export default function CourseForm({ formData, setFormData, departments, program
                   <option key={dept.id} value={dept.id}>{dept.name}</option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Program
-                {formData.departmentId && availablePrograms.length === 0 && (
-                  <span className="text-xs text-amber-600 ml-2">(No programs in this department)</span>
-                )}
-              </label>
+            </InputField>
+            <InputField 
+              label="Program" 
+              required 
+              error={getFieldError('programId')}
+            >
               <select
                 value={formData.programId || ''}
                 onChange={(e) => setFormData({ ...formData, programId: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('programId') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 required
                 disabled={!formData.departmentId}
               >
@@ -188,38 +209,46 @@ export default function CourseForm({ formData, setFormData, departments, program
                   <option key={prog.id} value={prog.id}>{prog.name}</option>
                 ))}
               </select>
-            </div>
+              {formData.departmentId && availablePrograms.length === 0 && (
+                <div className="text-xs text-amber-600 mt-1">No programs in this department</div>
+              )}
+            </InputField>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-                <CreditCard className="w-4 h-4 text-gray-400" />
-                Credits
-              </label>
+            <InputField 
+              label="Credits" 
+              required 
+              error={getFieldError('credits')}
+            >
               <input
                 type="number"
                 value={formData.credits || ''}
                 onChange={handleCreditsChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('credits') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 placeholder="e.g., 3"
                 min="1"
                 max="6"
                 required
               />
-            </div>
+            </InputField>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-                <Calendar className="w-4 h-4 text-gray-400" />
-                Year Level
-              </label>
+            <InputField 
+              label="Year Level" 
+              required 
+              error={getFieldError('yearLevel')}
+            >
               <select
-                value={formData.yearLevel?.toString() || '1'} // Default to '1' string for select
+                value={formData.yearLevel?.toString() || ''}
                 onChange={handleYearLevelChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('yearLevel') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 required
               >
+                <option value="">Select Year</option>
                 <option value="1">Year 1</option>
                 <option value="2">Year 2</option>
                 <option value="3">Year 3</option>
@@ -228,20 +257,26 @@ export default function CourseForm({ formData, setFormData, departments, program
               <p className="text-xs text-gray-500 mt-1">
                 The year level when students take this course
               </p>
-            </div>
+            </InputField>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Semester</label>
+            <InputField 
+              label="Semester" 
+              required 
+              error={getFieldError('semester')}
+            >
               <select
-                value={formData.semester?.toString() || '1'} // Default to '1' string for select
+                value={formData.semester?.toString() || ''}
                 onChange={handleSemesterChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  hasFieldError('semester') ? 'border-red-300' : 'border-gray-300'
+                }`}
                 required
               >
+                <option value="">Select Semester</option>
                 <option value="1">Semester 1</option>
                 <option value="2">Semester 2</option>
               </select>
-            </div>
+            </InputField>
           </div>
         </div>
       </div>

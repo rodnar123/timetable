@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { ModalType, Department, Program, Course, Faculty, Room, TimeSlot, Student, Substitution } from '@/types/database';
+import { ValidationError } from '@/utils/formValidation';
 import { 
   DepartmentFormData, 
   ProgramFormData, 
@@ -22,11 +23,13 @@ import CourseForm from './forms/CourseForm';
 import FacultyForm from './forms/FacultyForm';
 import RoomForm from './forms/RoomForm';
 import StudentForm from './forms/StudentForm';
-
 import SubstitutionForm from './forms/SubstitutionForm';
 import TimeSlotForm from './forms/TimeSlotForm';
 import JointSessionForm from './forms/JointSessionForm';
 import SplitClassForm from './forms/SplitClassForm';
+
+// Import validation summary
+import ValidationSummary from '@/components/common/ValidationSummary';
 
 // Import DebugPanel at the top with your other imports
 import DebugPanel from '@/components/DebugPanel';
@@ -99,35 +102,44 @@ export default function FormModal({
   conflictResult
 }: FormModalProps) {
   const [localConflictResult, setLocalConflictResult] = React.useState<{ canProceed: boolean; hasConflicts: boolean } | null>(null);
-  
-  const handleConflictChange = (result: { canProceed: boolean; hasConflicts: boolean } | null) => {
-    setLocalConflictResult(result);
-  };
-  
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [isFormValid, setIsFormValid] = useState(false);
+
+  // Handle validation changes from child forms - memoized to prevent infinite loops
+  const handleValidationChange = useCallback((isValid: boolean, errors: ValidationError[]) => {
+    setIsFormValid(isValid);
+    setValidationErrors(errors);
+  }, []);
+
   // Use local conflict result if available, otherwise use passed conflict result
   const currentConflictResult = localConflictResult || conflictResult;
+  
+  const handleConflictChange = useCallback((result: { canProceed: boolean; hasConflicts: boolean } | null) => {
+    setLocalConflictResult(result);
+  }, []);
+  
   const renderForm = () => {
     switch (modalType) {
       case 'department':
-        return <DepartmentForm formData={formData as unknown as DepartmentFormData} setFormData={setFormData as unknown as (data: DepartmentFormData) => void} />;
+        return <DepartmentForm formData={formData as unknown as DepartmentFormData} setFormData={setFormData as unknown as (data: DepartmentFormData) => void} onValidationChange={handleValidationChange} />;
       case 'program':
-        return <ProgramForm formData={formData as unknown as ProgramFormData} setFormData={setFormData as unknown as (data: ProgramFormData) => void} departments={departments} />;
+        return <ProgramForm formData={formData as unknown as ProgramFormData} setFormData={setFormData as unknown as (data: ProgramFormData) => void} departments={departments} onValidationChange={handleValidationChange} />;
       case 'course':
-        return <CourseForm formData={formData as unknown as CourseFormData} setFormData={setFormData as unknown as (data: CourseFormData) => void} departments={departments} programs={programs} />;
+        return <CourseForm formData={formData as unknown as CourseFormData} setFormData={setFormData as unknown as (data: CourseFormData) => void} departments={departments} programs={programs} onValidationChange={handleValidationChange} />;
       case 'faculty':
-        return <FacultyForm formData={formData as unknown as FacultyFormData} setFormData={setFormData as unknown as (data: FacultyFormData) => void} departments={departments} />;
+        return <FacultyForm formData={formData as unknown as FacultyFormData} setFormData={setFormData as unknown as (data: FacultyFormData) => void} departments={departments} onValidationChange={handleValidationChange} />;
       case 'room':
-        return <RoomForm formData={formData as any} setFormData={setFormData as any} departments={departments} />;
+        return <RoomForm formData={formData as any} setFormData={setFormData as any} departments={departments} onValidationChange={handleValidationChange} />;
       case 'student':
-        return <StudentForm formData={formData as unknown as StudentFormData} setFormData={setFormData as unknown as (data: StudentFormData) => void}  programs={programs} courses={courses}  />;
+        return <StudentForm formData={formData as unknown as StudentFormData} setFormData={setFormData as unknown as (data: StudentFormData) => void}  programs={programs} courses={courses} onValidationChange={handleValidationChange} />;
       case 'timeslot':
-        return <TimeSlotForm formData={formData as unknown as TimeSlotFormData} setFormData={setFormData as unknown as (data: TimeSlotFormData) => void} departments={departments} courses={courses} faculty={faculty} rooms={rooms} />;
+        return <TimeSlotForm formData={formData as unknown as TimeSlotFormData} setFormData={setFormData as unknown as (data: TimeSlotFormData) => void} departments={departments} courses={courses} faculty={faculty} rooms={rooms} timeSlots={timeSlots} onValidationChange={handleValidationChange} />;
       case 'substitution':
         return <SubstitutionForm formData={formData as unknown as SubstitutionFormData} setFormData={setFormData} timeSlots={timeSlots} courses={courses} faculty={faculty} />;
       case 'jointSession':
-        return <JointSessionForm formData={formData as unknown as JointSessionFormData} setFormData={setFormData} departments={departments} courses={courses} faculty={faculty} rooms={rooms} timeSlots={timeSlots} onConflictChange={handleConflictChange} />;
+        return <JointSessionForm formData={formData as unknown as JointSessionFormData} setFormData={setFormData} departments={departments} courses={courses} faculty={faculty} rooms={rooms} timeSlots={timeSlots} onConflictChange={handleConflictChange} onValidationChange={handleValidationChange} />;
       case 'classSplit':
-        return <SplitClassForm formData={formData as unknown as SplitClassFormData} setFormData={setFormData as unknown as (data: SplitClassFormData) => void} departments={departments} courses={courses} faculty={faculty} rooms={rooms} timeSlots={timeSlots} onConflictChange={handleConflictChange} />;
+        return <SplitClassForm formData={formData as unknown as SplitClassFormData} setFormData={setFormData as unknown as (data: SplitClassFormData) => void} departments={departments} courses={courses} faculty={faculty} rooms={rooms} timeSlots={timeSlots} onConflictChange={handleConflictChange} onValidationChange={handleValidationChange} />;
       default:
         return null;
     }
@@ -164,6 +176,17 @@ export default function FormModal({
 
             <div className="p-6 max-h-[60vh] overflow-y-auto">
               {renderForm()}
+              
+              {/* Validation Summary */}
+              {(validationErrors.length > 0 || isFormValid) && (
+                <div className="mt-6">
+                  <ValidationSummary 
+                    errors={validationErrors} 
+                    isValid={isFormValid} 
+                    showSuccess={isFormValid && validationErrors.length === 0}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Debug Panel - only shown in development
@@ -191,9 +214,9 @@ export default function FormModal({
               </button>
               <button
                 onClick={editingItem ? handleUpdate : handleCreate}
-                disabled={!!(currentConflictResult && !currentConflictResult.canProceed)}
+                disabled={!isFormValid || !!(currentConflictResult && !currentConflictResult.canProceed)}
                 className={`px-4 py-2 rounded-lg transition-colors ${
-                  currentConflictResult && !currentConflictResult.canProceed
+                  !isFormValid || (currentConflictResult && !currentConflictResult.canProceed)
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : 'bg-blue-600 text-white hover:bg-blue-700'
                 }`}
