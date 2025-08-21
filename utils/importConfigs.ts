@@ -58,7 +58,7 @@ export const departmentImportConfig: ImportConfig<Department> = {
     code: String(row.code || '').trim().toUpperCase(),
     name: String(row.name || '').trim(),
     description: String(row.description || '').trim(),
-    headOfDepartment: String(row.headOfDepartment || '').trim(),
+    head: String(row.headOfDepartment || '').trim(),
     email: String(row.email || '').trim(),
     phone: String(row.phone || '').trim()
   }),

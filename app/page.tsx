@@ -17,7 +17,10 @@ import {
   SubstitutionStatus,
   GroupType,
   ConflictType,
-  ConflictSeverity
+  ConflictSeverity,
+  RoomType,
+  ProgramMode,
+  ProgramLevel
 } from '@/types/database';
 
 // Import services
@@ -1548,6 +1551,239 @@ case 'student':
     }
   };
 
+  // Add handler for bulk importing departments
+  const handleBulkImportDepartments = async (importedDepartments: Partial<Department>[]) => {
+    if (!db) return;
+    
+    try {
+      setLoading(true);
+      showAlert('info', `Importing ${importedDepartments.length} departments...`);
+      
+      const results = await Promise.allSettled(
+        importedDepartments.map(async (deptData) => {
+          const newDepartment: Omit<Department, 'id' | 'createdAt' | 'updatedAt'> = {
+            code: deptData.code || '',
+            name: deptData.name || '',
+            description: deptData.description || '',
+            head: deptData.head || '',
+            email: deptData.email || '',
+            phone: deptData.phone || ''
+          };
+          return await db.create<Department>('departments', newDepartment);
+        })
+      );
+      
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      
+      // Reload departments to update the UI
+      await loadAllData(db);
+      
+      if (failed === 0) {
+        showAlert('success', `Successfully imported ${successful} departments`);
+      } else if (successful === 0) {
+        showAlert('error', `Failed to import all ${failed} departments`);
+      } else {
+        showAlert('warning', `Imported ${successful} departments successfully, ${failed} failed`);
+      }
+      
+    } catch (error) {
+      console.error('Bulk import error:', error);
+      showAlert('error', 'Failed to import departments');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add handler for bulk importing programs
+  const handleBulkImportPrograms = async (importedPrograms: Partial<Program>[]) => {
+    if (!db) return;
+    
+    try {
+      setLoading(true);
+      showAlert('info', `Importing ${importedPrograms.length} programs...`);
+      
+      const results = await Promise.allSettled(
+        importedPrograms.map(async (programData) => {
+          const newProgram: Omit<Program, 'id' | 'createdAt' | 'updatedAt'> = {
+            code: programData.code || '',
+            name: programData.name || '',
+            description: programData.description || '',
+            departmentId: programData.departmentId || '',
+            duration: programData.duration || 4,
+            totalCredits: programData.totalCredits || 120,
+            coordinator: programData.coordinator || '',
+            mode: programData.mode || ProgramMode.FullTime,
+            level: programData.level || ProgramLevel.Undergraduate
+          };
+          return await db.create<Program>('programs', newProgram);
+        })
+      );
+      
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      
+      // Reload programs to update the UI
+      await loadAllData(db);
+      
+      if (failed === 0) {
+        showAlert('success', `Successfully imported ${successful} programs`);
+      } else if (successful === 0) {
+        showAlert('error', `Failed to import all ${failed} programs`);
+      } else {
+        showAlert('warning', `Imported ${successful} programs successfully, ${failed} failed`);
+      }
+      
+    } catch (error) {
+      console.error('Bulk import error:', error);
+      showAlert('error', 'Failed to import programs');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add handler for bulk importing courses
+  const handleBulkImportCourses = async (importedCourses: Partial<Course>[]) => {
+    if (!db) return;
+    
+    try {
+      setLoading(true);
+      showAlert('info', `Importing ${importedCourses.length} courses...`);
+      
+      const results = await Promise.allSettled(
+        importedCourses.map(async (courseData) => {
+          const newCourse: Omit<Course, 'id' | 'createdAt' | 'updatedAt'> = {
+            code: courseData.code || '',
+            name: courseData.name || '',
+            description: courseData.description || '',
+            credits: courseData.credits || 3,
+            departmentId: courseData.departmentId || '',
+            programId: courseData.programId || '',
+            semester: courseData.semester || 1,
+            yearLevel: courseData.yearLevel || 1,
+            isCore: courseData.isCore !== undefined ? courseData.isCore : true,
+            prerequisites: courseData.prerequisites || []
+          };
+          return await db.create<Course>('courses', newCourse);
+        })
+      );
+      
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      
+      // Reload courses to update the UI
+      await loadAllData(db);
+      
+      if (failed === 0) {
+        showAlert('success', `Successfully imported ${successful} courses`);
+      } else if (successful === 0) {
+        showAlert('error', `Failed to import all ${failed} courses`);
+      } else {
+        showAlert('warning', `Imported ${successful} courses successfully, ${failed} failed`);
+      }
+      
+    } catch (error) {
+      console.error('Bulk import error:', error);
+      showAlert('error', 'Failed to import courses');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add handler for bulk importing faculty
+  const handleBulkImportFaculty = async (importedFaculty: Partial<Faculty>[]) => {
+    if (!db) return;
+    
+    try {
+      setLoading(true);
+      showAlert('info', `Importing ${importedFaculty.length} faculty members...`);
+      
+      const results = await Promise.allSettled(
+        importedFaculty.map(async (facultyData) => {
+          const newFaculty: Omit<Faculty, 'id' | 'createdAt' | 'updatedAt'> = {
+            staffId: facultyData.staffId || '',
+            title: facultyData.title || 'Mr.',
+            firstName: facultyData.firstName || '',
+            lastName: facultyData.lastName || '',
+            email: facultyData.email || '',
+            phone: facultyData.phone || '',
+            departmentId: facultyData.departmentId || '',
+            specialization: facultyData.specialization || '',
+            officeNumber: facultyData.officeNumber || '',
+            officeHours: facultyData.officeHours || ''
+          };
+          return await db.create<Faculty>('faculty', newFaculty);
+        })
+      );
+      
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      
+      // Reload faculty to update the UI
+      await loadAllData(db);
+      
+      if (failed === 0) {
+        showAlert('success', `Successfully imported ${successful} faculty members`);
+      } else if (successful === 0) {
+        showAlert('error', `Failed to import all ${failed} faculty members`);
+      } else {
+        showAlert('warning', `Imported ${successful} faculty members successfully, ${failed} failed`);
+      }
+      
+    } catch (error) {
+      console.error('Bulk import error:', error);
+      showAlert('error', 'Failed to import faculty');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add handler for bulk importing rooms
+  const handleBulkImportRooms = async (importedRooms: Partial<Room>[]) => {
+    if (!db) return;
+    
+    try {
+      setLoading(true);
+      showAlert('info', `Importing ${importedRooms.length} rooms...`);
+      
+      const results = await Promise.allSettled(
+        importedRooms.map(async (roomData) => {
+          const newRoom: Omit<Room, 'id' | 'createdAt' | 'updatedAt'> = {
+            code: roomData.code || '',
+            name: roomData.name || '',
+            building: roomData.building || '',
+            floor: roomData.floor || 1,
+            capacity: roomData.capacity || 30,
+            type: roomData.type || RoomType.Lecture,
+            equipment: roomData.equipment || [],
+            available: roomData.available !== undefined ? roomData.available : true
+          };
+          return await db.create<Room>('rooms', newRoom);
+        })
+      );
+      
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      
+      // Reload rooms to update the UI
+      await loadAllData(db);
+      
+      if (failed === 0) {
+        showAlert('success', `Successfully imported ${successful} rooms`);
+      } else if (successful === 0) {
+        showAlert('error', `Failed to import all ${failed} rooms`);
+      } else {
+        showAlert('warning', `Imported ${successful} rooms successfully, ${failed} failed`);
+      }
+      
+    } catch (error) {
+      console.error('Bulk import error:', error);
+      showAlert('error', 'Failed to import rooms');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Add handler for substitution actions
   const handleSubstitutionAction = async (id: string, action: 'approve' | 'reject') => {
     if (!db) return;
@@ -1792,6 +2028,7 @@ case 'student':
               handleDelete={handleDelete}
               selectedView={selectedView}
               setSelectedView={setSelectedView}
+              handleBulkImport={handleBulkImportDepartments}
             />
           )}
           
@@ -1805,6 +2042,7 @@ case 'student':
               handleDelete={handleDelete}
               selectedView={selectedView}
               setSelectedView={setSelectedView}
+              handleBulkImport={handleBulkImportPrograms}
             />
           )}
           
@@ -1817,6 +2055,7 @@ case 'student':
               setSelectedView={setSelectedView}
               openModal={openModal}
               handleDelete={handleDelete}
+              handleBulkImport={handleBulkImportCourses}
             />
           )}
           
@@ -1826,6 +2065,7 @@ case 'student':
               departments={departments}
               openModal={openModal}
               handleDelete={handleDelete}
+              handleBulkImport={handleBulkImportFaculty}
             />
           )}
           
@@ -1834,6 +2074,7 @@ case 'student':
               rooms={rooms}
               openModal={openModal}
               handleDelete={handleDelete}
+              handleBulkImport={handleBulkImportRooms}
             />
           )}
           
